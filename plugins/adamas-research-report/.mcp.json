@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "adamas": {
+      "type": "http",
+      "url": "https://www.adamas-research.com/mcp",
+      "headers": { "Authorization": "Bearer ${ADAMAS_API_KEY}" }
+    }
+  }
+}
