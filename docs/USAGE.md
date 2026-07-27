@@ -577,8 +577,11 @@ Skill 与 MCP prompts 方法论同源:装了 Skill 的 agent 会主动按 ADAMAS
 **Q:HTTP 421(Misdirected Request)?**
 服务端开启了 DNS-rebinding 保护,只接受 Host 白名单内的请求(`www.adamas-research.com` 等)。直连官方端点不会遇到此问题;若你在自建网关/反向代理后面转发请求,必须**透传原始 Host 头**(如 nginx `proxy_set_header Host www.adamas-research.com;`),或联系 ADAMAS 把你的域名加入白名单。
 
-**Q:返回里带 `error` 和 `retry_after_seconds`(频率/额度/并发超限)?**
-这是结构化限流信号(注意:不以 HTTP 429 形式出现,MCP 调用本身是成功的)。按 `retry_after_seconds` 的秒数等待后重试;把它做进你的重试逻辑,不要密集重试。日额度类(`retry_after_seconds: 3600`)当日基本不必再试,次日恢复。
+**Q:返回里带 `error` 和 `retry_after_seconds`(额度/并发超限)?**
+这是结构化限流信号(MCP 调用本身是成功的,超限信息在返回内容里)。按 `retry_after_seconds` 的秒数等待后重试;把它做进你的重试逻辑,不要密集重试。日额度类的 `retry_after_seconds` 指向**次日 0 点(北京时间)**的剩余秒数,当日不必再试。
+
+**Q:收到 HTTP 429?**
+频率超限(每分钟调用数)走 HTTP 429,响应带标准 `Retry-After` 头和 `retry_after_seconds` 字段,按其中任一等待后重试即可。注意频率是按**每个 HTTP 请求**计的,连接握手、列工具等协议请求也计入。
 
 **Q:任务 `failed`,错误是「任务超时未完成(服务可能重启过),请重新提交」?**
 服务滚动更新/重启会中断在跑任务,遗留任务超过 1 小时 TTL 后自动判 failed。重新提交同样的问题即可,重新提交会正常消耗一次 research 额度。
