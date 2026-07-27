@@ -317,7 +317,7 @@ asyncio.run(main())
 
 **参数**:`industry`(必填,支持模糊匹配,最多返回 5 个产业)。
 
-**返回结构要点**:`industries[]`,每条含 `name`、`sector`、`tracking_report_pdf_url`(边际跟踪报告)、`full_report_pdf_url`(完整报告)、`updated_at`。**下载链接 1 小时有效**,过期重新调用即可;无报告的产业带 `note` 说明。含 `disclaimer`。
+**返回结构要点**:`industries[]`,每条含 `name`、`sector`、`tracking_report_pdf_url`(边际跟踪报告)、`full_report_pdf_url`(完整报告)、`updated_at`。**下载链接 10 分钟有效**,过期重新调用即可;无报告的产业带 `note` 说明。含 `disclaimer`。
 
 ---
 
@@ -340,7 +340,7 @@ asyncio.run(main())
 
 #### `get_strategy_reports` — 策略沙盘推演报告
 
-**用途**:按策略主题的沙盘推演报告与圆桌会议资料的 PDF 下载链接(1 小时有效)。
+**用途**:按策略主题的沙盘推演报告与圆桌会议资料的 PDF 下载链接(10 分钟有效)。
 
 **参数**:无。**返回**:`strategy_reports[]`(`{strategy, pdf_url, updated_at}`)、`round_table_documents[]`。含 `disclaimer`。
 
@@ -514,9 +514,9 @@ get_research_task(task_id) ──► running(带 progress 阶段描述)──►
 
 | 维度 | 默认值 | 超限表现 |
 |---|---|---|
-| 请求频率(rpm) | 60 次/分钟(令牌桶) | `error: "频率超限(每分钟 60 次)"` + `retry_after_seconds: 5` |
-| data 类日额度 | 2000 次/日 | `error: "数据类工具今日额度(2000)已用完"` + `retry_after_seconds: 3600` |
-| research 类日额度 | 20 次提交/日 | `error: "研究类工具今日额度(20)已用完"` + `retry_after_seconds: 3600` |
+| 请求频率(rpm) | 60 次/分钟(令牌桶) | **HTTP 429** + `Retry-After` 头 + JSON `{error, retry_after_seconds}` |
+| data 类日额度 | 2000 次/日 | `error: "数据类工具今日额度(2000)已用完"` + `retry_after_seconds`(到次日 0 点的秒数) |
+| research 类日额度 | 20 次提交/日 | `error: "研究类工具今日额度(20)已用完"` + `retry_after_seconds`(到次日 0 点的秒数) |
 | 深度研究全局并发 | 全部 key 合计 2 个在跑 | `error: "深度研究并发已满,请稍后重试"` + `retry_after_seconds: 120` |
 | 产业链选股全局并发 | 全部 key 合计 1 个在跑 | `error: "选股任务并发已满,请稍后重试"` + `retry_after_seconds: 180` |
 | 深度纪要全局并发 | 全部 key 合计 1 个在跑 | `error: "纪要生成并发已满,请稍后重试"` + `retry_after_seconds: 300` |
@@ -525,7 +525,9 @@ get_research_task(task_id) ──► running(带 progress 阶段描述)──►
 
 - research 日额度只在**提交**时消耗;`get_research_task` 轮询走 data 类配额;
 - research 全局并发闸是服务级保护(受上游算力约束),与你的用量无关也可能撞到——把「提交失败 + 按 `retry_after_seconds` 重试」做进你的任务队列逻辑;
-- **超限不是 HTTP 429**:配额/并发超限以工具返回中的 `error` + `retry_after_seconds` 字段呈现(MCP 调用本身成功)。**客户端必须按 `retry_after_seconds` 的值退避后再试,不要密集重试**——密集重试只会持续消耗 rpm 令牌,不会更快拿到额度;
+- **频率(rpm)按每个 HTTP 请求计**,包含 `initialize`、`tools/list`、`prompts/*`、`ping` 等协议请求,不只是工具调用。超限返回 **HTTP 429**(带 `Retry-After` 头);
+- **日额度按工具调用计**,超限以工具返回中的 `error` + `retry_after_seconds` 呈现(MCP 调用本身成功)。`retry_after_seconds` 给的是**到次日 0 点(北京时间)的秒数**——那才是额度真正重置的时刻,按它退避,不要每小时空试;
+- **日额度落库,服务重启/更新不会重置**;并发超限同样按 `retry_after_seconds` 退避,密集重试只会持续消耗 rpm;
 - 用量按 key 计量落库,如需提额请联系 ADAMAS。
 
 ## 6. 数据口径与合规(重要)
