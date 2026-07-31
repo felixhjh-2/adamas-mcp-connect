@@ -1,5 +1,18 @@
 # CHANGELOG
 
+## 2026-07-31
+
+research 类工具(`submit_deep_research` / `submit_notes_report` / `submit_stock_screen`)
+开始**按 API key 所绑账号的额度计量**,与网页端同一套账:
+
+- API key **必须绑定账号**才能调用 research 类;data 类不受影响,照常使用;
+- `submit_deep_research` 选 `mode="pro"` 用量按 2 倍计,其余档位 1 倍;
+- **任务失败自动退回**(上游报错、超时判死、主动断开都退);成功产出的不退;
+- 计费链路暂时不可用时 research 类**拒绝提交**并给 `retry_after_seconds`,
+  不会静默放行 —— 按该值退避即可。
+
+详见 [docs/USAGE.md](docs/USAGE.md) 第 5 节「research 类工具与账号用量」。
+
 ## v2 — 2026-07-25
 
 新增:深度纪要报告生成(`submit_notes_report`,markdown 全文+PDF)、每日信息流
