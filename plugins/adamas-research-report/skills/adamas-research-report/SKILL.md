@@ -20,6 +20,10 @@ description: 用 ADAMAS 投研数据写专业研究报告/晨会纪要/行业跟
    - 模型观点:`submit_deep_research`(深度研究,异步)、`submit_stock_screen`(产业链选股,异步)、
      `submit_notes_report`(深度纪要成稿,异步)。
      提交后按返回的 `next_step` 轮询 `get_research_task`,等待期间先取客观数据并起草框架;
+     ⚠️ 这三个会**消耗所属账号的使用额度**(客观数据类不消耗):
+     · 同一个问题不要反复提交 —— 失败会自动退回,但成功产出的不退,即使你对结果不满意;
+     · `submit_deep_research` 选 `mode="pro"` 用量按 2 倍计,按需要选档而不是默认拉满;
+     · 若返回"该 API key 未绑定用户",说明这把 key 还没绑账号,联系 ADAMAS 处理,重试无用。
 4. **遇到限流**:返回带 `retry_after_seconds` 时按值等待,不要密集重试。
 
 ## 成文规范(必须遵守)

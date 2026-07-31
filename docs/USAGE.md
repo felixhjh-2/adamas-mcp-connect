@@ -520,6 +520,26 @@ get_research_task(task_id) ──► running(带 progress 阶段描述)──►
 | 深度研究全局并发 | 全部 key 合计 2 个在跑 | `error: "深度研究并发已满,请稍后重试"` + `retry_after_seconds: 120` |
 | 产业链选股全局并发 | 全部 key 合计 1 个在跑 | `error: "选股任务并发已满,请稍后重试"` + `retry_after_seconds: 180` |
 | 深度纪要全局并发 | 全部 key 合计 1 个在跑 | `error: "纪要生成并发已满,请稍后重试"` + `retry_after_seconds: 300` |
+| research 类账号用量 | 按绑定账号的开通范围计 | `error: "今日使用已达上限，请联系工作人员"` |
+
+### research 类工具与账号用量
+
+research 三个工具(`submit_deep_research` / `submit_notes_report` / `submit_stock_screen`)
+除上表的 key 日额度外,**还消耗 API key 所绑定账号的使用额度**,与该账号在网页端
+的用量算在一起。这三个工具每次调用都会真实跑一遍多轮检索与深度推理,因此:
+
+- **API key 必须绑定账号**才能调用 research 类工具。未绑定时返回
+  `error: "该 API key 未绑定用户,无法使用研究类工具;请联系 ADAMAS 为 key 绑定账号"`
+  ——data 类工具不受此限制,可照常使用;
+- **`submit_deep_research` 选 `mode="pro"` 时用量按 2 倍计**(与网页端 pro 档一致),
+  其余档位(`auto`/`flash`/`plus`)按 1 倍;
+- **任务失败会自动退回本次用量**:上游报错、超时判死、你主动断开都会退,
+  不必为失败的任务重复付出额度。**成功产出的任务不退**——包括你觉得结果不理想的情况;
+- 账号额度用尽时返回 `error: "今日使用已达上限，请联系工作人员"`,
+  与 key 日额度是两套独立限制,任一撞上都会被拒;
+- 计费服务短暂不可用时 research 类工具会**拒绝提交**(返回
+  `error: "计费服务暂时不可用,请稍后重试"` + `retry_after_seconds`),
+  而不是免费放行——按 `retry_after_seconds` 退避即可。
 
 说明:
 
@@ -572,7 +592,7 @@ Skill 与 MCP prompts 方法论同源:装了 Skill 的 agent 会主动按 ADAMAS
 检查 `Authorization` 头是否为 `Bearer <your-api-key>` 格式(注意 `Bearer` 后有空格)、key 是否复制完整(以 `adamas_` 开头)。仍失败则 key 可能已被禁用或未开通,联系 ADAMAS 确认。
 
 **Q:HTTP 401,提示「API key 已过期」?**
-你的 key 设有有效期且已到期(类似订阅到期)。联系 ADAMAS 续期即可,续期立即生效,无需换 key。
+你的 key 设有有效期且已到期。联系 ADAMAS 续期即可,续期立即生效,无需换 key。
 
 **Q:HTTP 421(Misdirected Request)?**
 服务端开启了 DNS-rebinding 保护,只接受 Host 白名单内的请求(`www.adamas-research.com` 等)。直连官方端点不会遇到此问题;若你在自建网关/反向代理后面转发请求,必须**透传原始 Host 头**(如 nginx `proxy_set_header Host www.adamas-research.com;`),或联系 ADAMAS 把你的域名加入白名单。
