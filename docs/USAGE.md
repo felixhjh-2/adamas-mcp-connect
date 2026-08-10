@@ -21,7 +21,7 @@ ADAMAS MCP 是 ADAMAS 金融投研平台的对外能力分发服务,以 **remote
 - **端点**:`https://www.adamas-research.com/mcp`
 - **传输**:MCP streamable HTTP(无状态,支持断线重连后重新调用)
 - **认证**:每个请求携带 HTTP 头 `Authorization: Bearer <your-api-key>`,API key 向 ADAMAS 申请获取(key 明文只在发放时出现一次,请妥善保管)
-- **内容**:**13 个工具**(9 个 data 类 + 4 个 research 类)+ 2 个预置 prompts + 1 个 WorkBuddy/OpenClaw Skill 包。以你的客户端 `tools/list` 实际返回为准
+- **内容**:**14 个工具**(10 个 data 类 + 4 个 research 类)+ 2 个预置 prompts + 1 个 WorkBuddy/OpenClaw Skill 包。以你的客户端 `tools/list` 实际返回为准(按商务约定开通的能力档不同,实际可见的工具数可能更多)
 
 两类工具的契约有本质区别,集成前务必理解(详见第 3、6 节):
 
@@ -145,6 +145,7 @@ asyncio.run(main())
 | `coverage.assets_by_class` | 按 L1 分类的资产数量分布 |
 | `coverage.industries_tracked` | 跟踪产业数 |
 | `coverage.company_reports` | `{reports: 报告总数, companies: 覆盖公司数}` |
+| `industry_catalog` | **全部产业名**(约190个),产业类工具唯一有效的取值集合 —— 详见 `get_industry_scores` 一节的名称口径 |
 | `freshness` | `model_picks_as_of` / `company_reports_latest` 等数据域的最新截止日 |
 | `meta.note` | 口径说明 |
 
@@ -160,6 +161,7 @@ asyncio.run(main())
     "industries_tracked": 189,
     "company_reports": {"reports": 3200, "companies": 2368}
   },
+  "industry_catalog": ["3D打印", "AI应用", "AI模型", "CXO", "光伏", "固态电池", "…共约190个"],
   "freshness": {
     "model_picks_as_of": "2026-07-23",
     "company_reports_latest": "2026-07-24"
@@ -300,7 +302,9 @@ asyncio.run(main())
 | `include_content` | bool | 否 | true | 是否返回全文;false 时只返回目录 |
 | `report_date` | string | 否 | 最新一期 | 取历史期全文(`YYYY-MM-DD`,从 `history` 目录中选;传错会返回可选日期表) |
 
-**返回结构要点**:`company`、`latest_report_date`、`history[]`(`{report_date, company}`)、`content`(最新一期全文 markdown)、`meta`(note + `disclaimer`)。未找到时返回 error;报告存储暂不可用时 `content` 为空串并附 `content_error` 说明(目录仍可用)。
+**返回结构要点**:`company`、`latest_report_date`、`history[]`(`{report_date, company}`)、`content`(最新一期全文 markdown)、`meta`(note + `disclaimer`)。未找到时返回 error,并在 `did_you_mean` 里给出相近的公司名(按输入前两字宽松匹配),照着改一次通常就能命中。报告存储暂不可用时 `content` 为空串并附 `content_error` 说明(目录仍可用)。
+
+> **拿到一批公司时先用 `check_company_coverage` 批量筛**,不要对本工具循环单查 —— 几十个往返又慢又会撞 60 次/分钟的频率限制,而且每次都把整篇报告全文拉回来。
 
 **示例**:
 
@@ -319,6 +323,38 @@ asyncio.run(main())
     "note": "ADAMAS 公司跟踪体系报告;content 为最新一期全文 markdown",
     "disclaimer": "本内容由 ADAMAS 模型生成,仅供研究参考,不构成任何投资建议;据此操作风险自担。引用时须保留本声明。"
   }
+}
+```
+
+---
+
+#### `check_company_coverage` — 批量查覆盖(拿到股票池先用它)
+
+**用途**:一次问清一批公司**有没有跟踪报告**,单次往返。拿到几十只的股票池、想先筛出「哪些我们有覆盖」再深入时用它。
+
+> **不要对 `get_company_tracking` 循环单查**:几十个往返既慢又会撞 60 次/分钟的频率限制,而且会把每家的报告全文都捞回来。本工具只回「有没有 + 最新期 + 期数」。
+
+**参数**:
+
+| 名称 | 类型 | 必填 | 默认 | 说明 |
+|---|---|---|---|---|
+| `names` | string[] | 是 | — | 公司名列表,**一次最多 100 家**(支持模糊匹配);超过请分批 |
+
+**返回结构要点**:`covered[]`(`{asked 你传的名字, company_name 库中标准名, latest_report_date, periods 历史期数}`)、`not_covered[]`(没覆盖的原样回显)、`summary`(`{asked, covered, not_covered}`)、`meta.note`。取全文时请用 `covered[].company_name`(库中标准名)去调 `get_company_tracking`。
+
+**示例**:
+
+```jsonc
+// 调用:check_company_coverage(names=["贵州茅台", "宁德时代", "某不存在公司XYZ"])
+// 返回(取自真实调用):
+{
+  "covered": [
+    {"asked": "贵州茅台", "company_name": "贵州茅台", "latest_report_date": "2026-08-05", "periods": 5},
+    {"asked": "宁德时代", "company_name": "宁德时代", "latest_report_date": "2026-08-07", "periods": 5}
+  ],
+  "not_covered": ["某不存在公司XYZ"],
+  "summary": {"asked": 3, "covered": 2, "not_covered": 1},
+  "meta": {"note": "covered 里的 company_name 是库中的标准名,取全文请用 get_company_tracking(company=该标准名)"}
 }
 ```
 
@@ -570,7 +606,7 @@ research 三个工具(`submit_deep_research` / `submit_notes_report` / `submit_s
 1. **一切数值以返回中的 `as_of` 为准**。行情为每交易日盘后(约 16–17 点)人工导入,存在 T+0 晚间前的滞后:交易日当天下午调用可能拿到的仍是上一交易日数据——这不是故障。判断时效请对照 `list_capabilities().freshness`,并在你的产出物中把 `as_of` 标注给最终读者(如「ADAMAS 数据,截至 2026-07-23」)。
 2. **免责声明必须原文保留**:research 类结果及含模型观点的 data 类返回(`get_model_picks` / `get_industry_scores` / `get_company_tracking`)均带 `disclaimer` 字段。你的 agent 在引用这些内容产出报告/回答时,**必须一字不改地保留该声明**;
 3. **输出内容不构成投资建议**:所有数据与观点仅供研究参考,不构成对任何人的投资建议,据此操作风险自担。将本服务能力集成到面向终端用户的产品时,合规责任由集成方承担;
-5. 建议在成文时区分三种内容:①ADAMAS 客观数据(标 `as_of`)②ADAMAS 模型观点(深度研究/选股/景气度打分,注明来源)③你自己的推断与综合。
+4. 建议在成文时区分三种内容:①ADAMAS 客观数据(标 `as_of`)②ADAMAS 模型观点(深度研究/选股/景气度打分,注明来源)③你自己的推断与综合。
 
 ## 7. 预置 Prompts 与 WorkBuddy Skill
 

@@ -20,9 +20,13 @@ description: 用 ADAMAS 投研数据写专业研究报告/晨会纪要/行业跟
    万一没命中,error 里的 `available_industries` 会给全名单,照着改一次就行。
 3. **数据与观点分开取、分开写**:
    - 客观数据:`get_model_picks`(模型选股)、`get_industry_scores`(景气度)、
+     `check_company_coverage`(批量查哪些公司有跟踪报告)、
      `get_company_tracking`(公司跟踪全文,可传 report_date 取历史期做跨期对比)、
      `get_industry_graph`(产业链传导图谱)、`get_info_feed`(当日要闻打分摘要)、
      `get_industry_report`/`get_strategy_reports`(成稿 PDF 链接,直接交付给读者);
+   - **拿到一批公司(股票池/名单)时,先 `check_company_coverage` 一次问清覆盖情况,
+     再对命中的用 `get_company_tracking` 取全文** —— 不要对后者循环单查:
+     几十个往返又慢又会撞 60 次/分钟的频率闸,还会把每家的全文都拉回来。
    - 模型观点:`submit_deep_research`(深度研究,异步)、`submit_stock_screen`(产业链选股,异步)、
      `submit_notes_report`(深度纪要成稿,异步)。
      提交后按返回的 `next_step` 轮询 `get_research_task`,等待期间先取客观数据并起草框架;
