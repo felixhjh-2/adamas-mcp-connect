@@ -12,6 +12,12 @@ description: 用 ADAMAS 投研数据写专业研究报告/晨会纪要/行业跟
 1. **先看地图再取数**:任何任务先调 `list_capabilities`,确认覆盖范围和各数据域的
    `freshness`(数据截止日)。行情为交易日盘后导入,别把旧数据当今天的。
 2. **代码先解析**:用户说的公司名先 `search_assets` 转成 `asset_code`,再调其他工具。
+2.5 **产业名先对齐,别按行业分类猜**:产业类工具(`get_industry_scores` /
+   `get_industry_graph` / `get_industry_report`)只认 ADAMAS 自建的细分产业名,
+   取值集合就是 `list_capabilities` 返回的 `industry_catalog`(约190个)。
+   **没有**「新能源」「医药生物」「电力设备」这类申万/中信一级行业 —— 它们要拆成
+   「光伏」「风电」「储能」「锂电池」「固态电池」这样的细分名分别查。
+   万一没命中,error 里的 `available_industries` 会给全名单,照着改一次就行。
 3. **数据与观点分开取、分开写**:
    - 客观数据:`get_model_picks`(模型选股)、`get_industry_scores`(景气度)、
      `get_company_tracking`(公司跟踪全文,可传 report_date 取历史期做跨期对比)、
@@ -48,5 +54,10 @@ description: 用 ADAMAS 投研数据写专业研究报告/晨会纪要/行业跟
 data 工具取相关行业/标的客观数据 → 轮询拿到研究结论 → 综合成文(研究观点注明
 来自 ADAMAS 研究引擎,数据佐证标 as_of,交叉验证部分是你自己的)。
 
-**晨会纪要一页**:`get_industry_scores()`(全量,取分数最高/变动明显的 3-5 个)+
-`get_model_picks(top_n=10)` → 一页式:今日景气度看点+模型偏好+风险提示+免责。
+**晨会纪要一页**:`get_industry_scores(include_summary=false)`(全量打分+六维趋势,
+**不带摘要全文**)→ 挑出分数最高/变动明显的 3-5 个 → 对这几个
+`get_industry_scores(industry=X)` 单查拿摘要 + `get_model_picks(top_n=10)`
+→ 一页式:今日景气度看点+模型偏好+风险提示+免责。
+
+> 不要用不带参数的 `get_industry_scores()` 做这一步:它会把全部约 190 篇跟踪摘要
+> 全文一次灌进上下文(比上面那种大 5 倍),而你只需要其中 3-5 篇。

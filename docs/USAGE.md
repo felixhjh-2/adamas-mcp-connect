@@ -247,8 +247,21 @@ asyncio.run(main())
 |---|---|---|---|---|
 | `industry` | string | 否 | 不传返回全部 | 产业名称,支持模糊匹配;不传时返回全部清单(按分数降序) |
 | `include_history` | bool | 否 | false | 取历史打分快照;**仅在同时传了 `industry` 时生效** |
+| `include_summary` | bool | 否 | true | 传 `false` 省略 `tracking_summary` 全文,其余字段不变 |
 
-**返回结构要点**:`industries[]`,每条含 `name`、`sector`、`score`、`trends`(六个维度,值为方向符号文本:`↗` 改善 / `→` 持平 / `↘` 恶化)、`tracking_summary`(最新跟踪摘要)、`summary_as_of`;`include_history=true` 时另含 `score_history[]`(`{date, score}`)。未匹配到产业时返回 error(提示不带参数可取全部清单)。
+**返回结构要点**:`industries[]`,每条含 `name`、`sector`、`score`、`trends`(六个维度,值为方向符号文本:`↗` 改善 / `→` 持平 / `↘` 恶化)、`tracking_summary`(最新跟踪摘要)、`summary_as_of`;`include_history=true` 时另含 `score_history[]`(`{date, score}`)。未匹配到产业时返回 error,并在 `available_industries` 里附上**全部可选产业名**,照着改一次即可命中。
+
+> **⚠️ 产业名称口径**:本工具只认 ADAMAS 自建的**细分产业名**(如「光伏」「固态电池」「CXO」),**不认**申万/中信的一级行业名 —— 没有「新能源」「医药生物」「电力设备」这类。查之前先用 `list_capabilities` 的 `industry_catalog` 对齐名称。
+
+> **📦 按体量选调用方式**(2026-08-10 实测,189 个产业;摘要每天更新,绝对值会浮动):
+> | 你想要什么 | 怎么调 | 返回体量 |
+> |---|---|---|
+> | 确认产业名怎么写 | `list_capabilities` → `industry_catalog` | 约 2 KB |
+> | 某个产业的摘要全文 | `get_industry_scores(industry="光伏")` | 约 1 KB |
+> | 按分数/趋势筛产业 | `get_industry_scores(include_summary=false)` | 约 43 KB |
+> | 全景通读所有摘要 | `get_industry_scores()` 不带参数 | **约 220 KB** |
+>
+> 最后一行会把全部约 190 篇跟踪摘要一次灌进上下文,比其它几种大一到两个数量级。只在确实要通读时才这么用 —— 想筛产业请用 `include_summary=false`(约为全量的 1/5),挑出来之后再对那几个单查全文。全量返回的 `meta.size_warning` 里会给出**本次的实际体量**。
 
 **示例**:
 
