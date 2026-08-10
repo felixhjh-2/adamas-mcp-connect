@@ -1,5 +1,24 @@
 # CHANGELOG
 
+## 2026-08-11
+
+产业类工具更好用了 —— 起因是发现 agent 常按申万/中信的一级行业名去查产业
+(「新能源」「医药生物」),而 ADAMAS 用的是自建的细分产业名(「光伏」「固态电池」
+「CXO」),对不上就查不到。
+
+- `list_capabilities` 新增 **`industry_catalog`**:一次返回**全部产业名**(约190个,
+  仅约 2KB)。这是 `get_industry_scores` / `get_industry_graph` / `get_industry_report`
+  三个工具**唯一有效的取值集合**,查产业前照它对齐名称即可;
+- 产业/图谱/公司类工具**没查到时会把可选值一并返回**:
+  `available_industries`(全部产业名)、`available_nodes_by_sector`(按 sector 分组的
+  图谱节点)、`did_you_mean`(相近公司名)。照着改一次就能命中,不必反复试;
+- `get_industry_scores` 新增 **`include_summary`**(默认 `true`,返回结构不变)。
+  传 `false` 省略各产业的 `tracking_summary` 全文,全量返回体量降到约 1/5 ——
+  「先按分数/趋势筛出几个产业,再单查它们的摘要」这种用法建议改用它,
+  可以少占大量上下文。全量返回的 `meta.size_warning` 会给出本次的实际体量。
+
+详见 [docs/USAGE.md](docs/USAGE.md) 中 `get_industry_scores` 一节。
+
 ## 2026-07-31
 
 research 类工具(`submit_deep_research` / `submit_notes_report` / `submit_stock_screen`)
