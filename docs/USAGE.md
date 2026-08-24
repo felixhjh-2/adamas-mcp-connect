@@ -4,7 +4,14 @@
 
 ## 1. 概述
 
-ADAMAS MCP 是 ADAMAS 金融投研平台的对外能力分发服务,以 **remote MCP server(streamable HTTP)** 形态提供,一个端点适配所有支持 MCP 的客户端(WorkBuddy、Claude / Claude Code、Cursor、Codex、自建 agent 框架等)。
+ADAMAS MCP 是 ADAMAS 金融投研平台的对外能力分发服务,以
+**remote MCP server(streamable HTTP)** 形态提供。它适配能配置自定义
+remote MCP endpoint 与 `Authorization: Bearer` 请求头的客户端
+(WorkBuddy、Claude Code、Cursor、Codex、自建 agent 框架等)。
+
+> **接入前提**:当前服务未实现 MCP OAuth discovery / 自动授权,
+> 需手工配置端点和 Bearer key。如果你的客户端版本不能为 remote MCP
+> 连接设置自定义 HTTP header,就不能直接接入当前服务。
 
 它对外提供七类投研能力:
 
@@ -14,18 +21,18 @@ ADAMAS MCP 是 ADAMAS 金融投研平台的对外能力分发服务,以 **remote
 | 产业报告 | 边际跟踪报告与完整深度报告的 PDF 下载(成稿报告直接给最终用户) |
 | 产业关联图谱 | 约 190 个产业节点 + 产业链传导关系边(方向/强度/时滞),支持传导链推演 |
 | 公司跟踪 | 约 2400 家公司的跟踪报告全文(markdown,含历史期)与历史目录 |
-| 模型选股 | 最新一期模型打分排名(总分/百分位/预期收益及市场·风格·宏观分项) |
 | 每日信息流 | 多源聚合后二次加工的当日市场要闻打分摘要(晨会/盘前场景) |
-| 深度研究与纪要 | 深度研究问答、产业链选股、深度纪要报告生成(异步任务) |
+| 模型与产业链选股 | 最新模型排名(秒级只读)与产业链量化选股任务(异步) |
+| 深度研究与纪要 | 深度研究问答、深度纪要报告生成(异步任务) |
 
 - **端点**:`https://www.adamas-research.com/mcp`
 - **传输**:MCP streamable HTTP(无状态,支持断线重连后重新调用)
 - **认证**:每个请求携带 HTTP 头 `Authorization: Bearer <your-api-key>`,API key 向 ADAMAS 申请获取(key 明文只在发放时出现一次,请妥善保管)
-- **内容**:**14 个工具**(10 个 data 类 + 4 个 research 类)+ 2 个预置 prompts + 1 个 WorkBuddy/OpenClaw Skill 包。以你的客户端 `tools/list` 实际返回为准(按商务约定开通的能力档不同,实际可见的工具数可能更多)
+- **内容**:本公开主文档对应 Standard 档,**14 个工具**(11 个 data 类 + 3 个 research 提交工具)+ 2 个预置 prompts + 1 个 WorkBuddy/OpenClaw Skill 包。Standard 包含模型选股排名与产业链量化选股两个结果型入口。本公开文档只描述 Standard 契约。
 
 两类工具的契约有本质区别,集成前务必理解(详见第 3、6 节):
 
-- **data 类**:客观数据与已成稿报告,秒级返回,配额宽;
+- **data 类**:客观数据、已发布模型结果与已成稿报告,秒级返回,配额宽;
 - **research 类**:含模型生成的分析观点,**异步任务对**(提交 → 轮询),配额窄,结果强制附带免责声明,**引用时必须原文保留**;
 
 ## 2. 快速开始
@@ -53,30 +60,56 @@ claude mcp add adamas --transport http https://www.adamas-research.com/mcp \
 
 验证:`claude mcp list` 应显示 adamas 已连接;会话内 `/mcp` 可查看工具清单。
 
-### 2.3 Claude Desktop / Cursor / Codex 等(通用 JSON 配置)
+### 2.3 Codex
 
-在客户端的 MCP 配置文件(如 Cursor 的 `~/.cursor/mcp.json`、Claude Desktop 的 `claude_desktop_config.json`)中加入:
+在 `~/.codex/config.toml`(或已信任项目的 `.codex/config.toml`)中加入:
+
+```toml
+[mcp_servers.adamas]
+url = "https://www.adamas-research.com/mcp"
+bearer_token_env_var = "ADAMAS_API_KEY"
+default_tools_approval_mode = "writes"
+```
+
+用密码管理器或 shell profile 向启动 Codex 的进程注入
+`ADAMAS_API_KEY`,不要把 key 写进 `config.toml`。服务端工具带 MCP read/write
+annotations;因此建议保留 `writes`:纯查询可自动调用,提交研究等非只读操作再请求
+用户确认。重启 Codex 后可用 `/mcp` 查看连接与工具。
+
+### 2.4 Cursor
+
+在 Cursor 的 `~/.cursor/mcp.json` 中加入:
 
 ```json
 {
   "mcpServers": {
     "adamas": {
-      "type": "http",
       "url": "https://www.adamas-research.com/mcp",
-      "headers": { "Authorization": "Bearer <your-api-key>" }
+      "headers": { "Authorization": "Bearer ${env:ADAMAS_API_KEY}" }
     }
   }
 }
 ```
 
-部分客户端把 `type` 字段写作 `"streamable-http"` 或不需要该字段,以你所用客户端文档为准;URL 与 headers 不变。
+向启动 Cursor 的进程注入 `ADAMAS_API_KEY` 后重启 Cursor。密钥不写进
+`mcp.json`;Cursor 会按 `url` 自动使用 remote HTTP transport。
 
-### 2.4 自建 agent(Python,官方 mcp SDK)
+### 2.5 Claude Desktop
+
+ADAMAS 当前的自定义 Bearer 认证不能直接配置进 Claude Desktop 的 remote
+connector。Claude Desktop 的 remote MCP 需从 Settings → Connectors 添加,
+当前界面提供免认证或 OAuth 流程;
+`claude_desktop_config.json` 只配本地 server,不会按上面 Cursor 的 JSON 连接
+remote HTTP server。由于 ADAMAS MCP 目前是自定义 Bearer header 且尚未实现
+OAuth,请改用 Claude Code、Cursor、Codex 或 WorkBuddy。
+
+### 2.6 自建 agent(Python,官方 mcp SDK)
 
 ```python
 import asyncio, json
+import httpx
 from mcp import ClientSession
-from mcp.client.streamable_http import streamablehttp_client
+from mcp.client.streamable_http import streamable_http_client
 
 URL = "https://www.adamas-research.com/mcp"
 HEADERS = {"Authorization": "Bearer <your-api-key>"}
@@ -89,7 +122,10 @@ def parse(result):
     return json.loads(result.content[0].text)
 
 async def main():
-    async with streamablehttp_client(URL, headers=HEADERS) as (read, write, _):
+    async with (
+        httpx.AsyncClient(headers=HEADERS) as http_client,
+        streamable_http_client(URL, http_client=http_client) as (read, write, _),
+    ):
         async with ClientSession(read, write) as session:
             await session.initialize()
 
@@ -110,9 +146,9 @@ async def main():
 asyncio.run(main())
 ```
 
-工具返回同时携带 structured output(`result.structuredContent`,JSON dict)与等价的 JSON 文本(TextContent);上例的 `parse` 两者都兼容,建议照抄。agent 类客户端(Claude / WorkBuddy / Cursor 等)无需关心,模型直接读 JSON。
+工具返回同时携带 structured output(`result.structuredContent`,JSON dict)与等价的 JSON 文本(TextContent);上例的 `parse` 两者都兼容,建议照抄。agent 类客户端(Claude Code / WorkBuddy / Cursor 等)无需关心,模型直接读 JSON。
 
-### 2.5 接入后的第一次调用(约定)
+### 2.7 接入后的第一次调用(约定)
 
 1. **先调 `list_capabilities`**:拿覆盖范围与各数据域新鲜度(`freshness`),行情为交易日盘后导入,别把旧数据当今天的;
 2. **标的名可先解析**:用 `search_assets` 把公司名/代码解析成标准信息(行业分类/市场风格属性);
@@ -123,11 +159,11 @@ asyncio.run(main())
 
 通用约定:
 
-- 所有工具返回 JSON dict。业务层错误(参数错误、未找到、配额超限等)不会抛协议异常,而是返回 `{"error": "<原因>"}`,可退避的错误额外带 `retry_after_seconds` 字段——你的 agent 应当检查返回中是否含 `error` 键;
+- 所有工具返回 JSON dict。业务层错误(参数错误、未找到、配额超限等)会返回 `{"error": "<原因>"}` 并把 MCP `CallToolResult.isError` 标为 `true`;可退避的错误额外带 `retry_after_seconds` 字段。它们不是 HTTP/传输异常,SDK 通常仍会返回 `CallToolResult`,因此你的 agent 应同时处理 `isError` 和 JSON 中的 `error` 键;
 - 数据类返回带 `meta` 字段(口径说明,观点相关的还含 `disclaimer`),数值带各自的 `as_of`(数据截止日);
 - 参数中的日期一律 `YYYY-MM-DD`;返回中的 `as_of` / 序列日期也是 `YYYY-MM-DD`,仅产业跟踪的 `summary_as_of` 与 `score_history[].date` 为带时区的完整时间戳(如 `2026-07-20 16:06:22+00:00`)。
 
-### 3.1 data 类(纯客观,零观点,秒级返回)
+### 3.1 data 类(客观数据与已发布结果,秒级返回)
 
 ---
 
@@ -146,7 +182,7 @@ asyncio.run(main())
 | `coverage.industries_tracked` | 跟踪产业数 |
 | `coverage.company_reports` | `{reports: 报告总数, companies: 覆盖公司数}` |
 | `industry_catalog` | **全部产业名**(约190个),产业类工具唯一有效的取值集合 —— 详见 `get_industry_scores` 一节的名称口径 |
-| `freshness` | `model_picks_as_of` / `company_reports_latest` 等数据域的最新截止日 |
+| `freshness` | Standard 可见数据域的最新截止日:`model_picks_as_of`、`company_reports_latest` |
 | `meta.note` | 口径说明 |
 
 **示例**:
@@ -181,7 +217,7 @@ asyncio.run(main())
 | 名称 | 类型 | 必填 | 默认 | 说明 |
 |---|---|---|---|---|
 | `query` | string | 是 | — | 名称或代码片段,如 `"紫金"`、`"601899"` |
-| `limit` | int | 否 | 10 | 返回条数,服务端截断到 1–50 |
+| `limit` | int | 否 | 10 | 返回条数,合法范围 1–50;越界为参数错误 |
 
 **返回结构要点**:`matches[]`,每条含 `asset_code`、`asset_name`、`asset_class_l1`、`asset_class_l2`、`market_attribute`、`style_attribute`。排序规则:代码前缀命中 > 名称全等 > 名称短者优先。
 
@@ -206,29 +242,34 @@ asyncio.run(main())
 
 #### `get_model_picks` — 最新一期模型选股排名
 
-**用途**:查询已落库的最新一期模型选股结果(不触发选股流程,秒级返回),含总分/百分位/预期收益及市场·风格·宏观分项,可按 L1 行业过滤。**非投资建议,引用需保留 `disclaimer`**。
+**用途**:查询已发布的最新一期模型选股结果(不触发选股流程,秒级返回),
+含总分、百分位、预期收益及市场·风格·宏观分项,可按 L1 行业过滤。
+**非投资建议,引用需保留 `disclaimer`。**
 
 **参数**:
 
 | 名称 | 类型 | 必填 | 默认 | 说明 |
 |---|---|---|---|---|
-| `top_n` | int | 否 | 30 | 返回前 N 名,服务端截断到 1–100 |
+| `top_n` | int | 否 | 30 | 返回前 N 名,合法范围 1–100;越界为参数错误 |
 | `asset_class_l1` | string | 否 | 不过滤 | 按 L1 行业精确过滤,如 `"有色金属"` |
 
-**返回结构要点**:`as_of`(该期打分日)、`picks[]`(`{rank, asset_code, asset_name, class_l1, total_score, percentile, expected_return, components:{market, style, macro}}`,rank 越小越靠前,`percentile` 为 0–100 的百分位)、`meta`(note + `disclaimer`)。
+**返回结构要点**:`as_of`(该期打分日)、`picks[]`(`{rank, asset_code,
+asset_name, class_l1, total_score, percentile, expected_return,
+components:{market, style, macro}}`,rank 越小越靠前,`percentile` 为 0–100 的百分位)、
+`meta`(note + `disclaimer`)。
 
 **示例**:
 
 ```jsonc
 // 调用:get_model_picks(top_n=3)
-// 返回(摘要,取自真实调用):
+// 返回(摘要,数值仅作结构示意):
 {
   "as_of": "2026-07-23",
   "picks": [
-    {"rank": 1, "asset_code": "600416.SH", "asset_name": "湘电股份", "class_l1": "电力设备",
-     "total_score": 1.575, "percentile": 100.0, "expected_return": 0.318,
+    {"rank": 1, "asset_code": "600416.SH", "asset_name": "湘电股份",
+     "class_l1": "电力设备", "total_score": 1.575, "percentile": 100.0,
+     "expected_return": 0.318,
      "components": {"market": 0.421, "style": 0.539, "macro": 0.489}}
-    // …
   ],
   "meta": {
     "note": "最新一期模型打分排名(纯量化,非投资建议);rank 越小越靠前",
@@ -236,6 +277,10 @@ asyncio.run(main())
   }
 }
 ```
+
+> `asset_class_l1` 使用资产表的 L1 分类,与 `industry_catalog` 中的 ADAMAS
+> 细分产业不是同一套分类。不要把「光伏」「存储芯片」等细分产业名直接传给它;
+> 不确定时省略该参数取全市场排名,再按研究主题筛选相关标的。
 
 ---
 
@@ -403,8 +448,8 @@ asyncio.run(main())
 
 | 名称 | 类型 | 必填 | 默认 | 说明 |
 |---|---|---|---|---|
-| `limit` | int | 否 | 30 | 返回条数(≤200) |
-| `min_score` | float | 否 | 5(披露下限) | 可传更高只看高分(如 `8`);低于 5 会被钳回下限 |
+| `limit` | int | 否 | 30 | 返回条数,合法范围 1–200;越界为参数错误 |
+| `min_score` | float | 否 | 5(披露下限) | 合法范围 0–10;可传更高只看高分(如 `8`),0–5 之间的合法值仍按披露下限 5 执行;越界为参数错误 |
 
 **返回结构要点**:`items[]`(`{score, title, body}`,按文件序)、`count`。注意:条目**不含来源链接**(口径与 ADAMAS C 端一致);当日文件尚未生成时返回空列表并附说明。含 `disclaimer`。
 
@@ -444,23 +489,29 @@ research 类与 data 类的契约区别:**结果含模型生成的分析观点**
 
 ---
 
-#### `submit_stock_screen` — 提交产业链选股
+#### `submit_stock_screen` — 提交产业链量化选股
 
-**用途**:按产业链名称(中文)触发选股流程,产出产业链图谱与标的建议(含模型观点)。约 3–8 分钟。
+**用途**:按中文产业链名称触发选股流程,综合已发布模型排名、相似度与产业链分析,
+产出产业链图谱与候选标的(含模型观点)。约 3–8 分钟。
 
 **参数**:
 
 | 名称 | 类型 | 必填 | 默认 | 说明 |
 |---|---|---|---|---|
-| `industry_chain` | string | 是 | — | 产业链名称(中文),1–200 字,如 `"存储芯片"`、`"光伏"` |
+| `industry_chain` | string | 是 | — | 产业链名称,1–200 字,如 `"存储芯片"`、`"光伏"` |
 
-**返回结构要点**(提交成功):`task_id`、`status: "running"`、`eta_hint: "约 3-8 分钟"`、`next_step`(建议轮询间隔 ≥60 秒)。选股全局同一时刻只跑 1 个任务,并发已满时返回 error + `retry_after_seconds: 180`。
+**返回结构要点**(提交成功):`task_id`、`status: "running"`、
+`eta_hint: "约 3-8 分钟"`、`next_step`(建议轮询间隔 ≥60 秒)。选股全局同一时刻
+只运行 1 个任务,并发已满时返回 error + `retry_after_seconds: 180`。
+
+`done` 时 `result` 为选股引擎的完整结果对象,包含产业链图谱、候选公司与排名信息,
+并带 `disclaimer`。本工具消耗 research 类 key 日额度及绑定账号的使用额度;
+任务失败会自动退回本次账号用量,成功交付后不退。
 
 **示例**:
 
 ```jsonc
 // 调用:submit_stock_screen(industry_chain="存储芯片")
-// 返回:
 {
   "task_id": "a31b7c90-…",
   "status": "running",
@@ -485,7 +536,9 @@ research 类与 data 类的契约区别:**结果含模型生成的分析观点**
 
 #### `get_research_task` — 轮询异步任务
 
-**用途**:查询 `submit_deep_research` / `submit_stock_screen` / `submit_notes_report` 提交的任务状态与结果。**只能查询当前 API key 自己提交的任务**。此调用计入 data 类配额(rpm/日额度),**不消耗 research 日额度**——放心轮询,但请遵守建议间隔。
+**用途**:查询 `submit_deep_research` / `submit_stock_screen` / `submit_notes_report`
+提交的任务状态与结果。**只能查询当前 API key 自己提交的任务**。此调用计入
+data 类配额(rpm/日额度),**不消耗 research 日额度**——放心轮询,但请遵守建议间隔。
 
 **参数**:
 
@@ -504,7 +557,7 @@ research 类与 data 类的契约区别:**结果含模型生成的分析观点**
 `done` 时的 `result` 结构:
 
 - 深度研究:`{answer(完整回答 markdown), mode, engine, evidence_count, web_evidence_count, disclaimer}`。`mode` 回显你提交的档位;`engine` 为研究引擎标识(当前为 `"agentic"`);`evidence_count` / `web_evidence_count` 在当前引擎下不透出统计,恒为 0,请勿依赖,以 `answer` 正文中的引用为准;
-- 产业链选股:选股引擎产出的结果对象(产业链图谱 + 标的建议)+ `disclaimer`;
+- 产业链选股:选股引擎完整结果对象(产业链图谱、候选公司与排名信息)+ `disclaimer`;
 - 深度纪要:`{title, markdown, pdf_download_url, pdf_download_expires_at, disclaimer}`(见 `submit_notes_report`)。
 
 **示例**:
@@ -529,7 +582,7 @@ research 类与 data 类的契约区别:**结果含模型生成的分析观点**
 ## 4. 异步任务模式(research 类完整生命周期)
 
 ```
-submit_deep_research / submit_stock_screen
+submit_deep_research / submit_stock_screen / submit_notes_report
         │  秒级返回 task_id(此时任务已在服务端运行)
         ▼
 get_research_task(task_id) ──► running(带 progress 阶段描述)──► 继续轮询
@@ -546,7 +599,7 @@ get_research_task(task_id) ──► running(带 progress 阶段描述)──►
 | 深度研究 | `auto` | 约 2–5 分钟 | ≥30 秒 |
 | 深度研究 | `plus` | 约 5–10 分钟 | ≥30 秒 |
 | 深度研究 | `pro` | 约 8–12 分钟 | ≥30 秒 |
-| 产业链选股 | — | 约 3–8 分钟 | ≥60 秒 |
+| 产业链量化选股 | — | 约 3–8 分钟 | ≥60 秒 |
 | 深度纪要报告 | — | 约 8–15 分钟 | ≥60 秒 |
 
 **实践建议**:
@@ -573,9 +626,10 @@ get_research_task(task_id) ──► running(带 progress 阶段描述)──►
 
 ### research 类工具与账号用量
 
-research 三个工具(`submit_deep_research` / `submit_notes_report` / `submit_stock_screen`)
+research 三个提交工具(`submit_deep_research` / `submit_stock_screen` /
+`submit_notes_report`)
 除上表的 key 日额度外,**还消耗 API key 所绑定账号的使用额度**,与该账号在网页端
-的用量算在一起。这三个工具每次调用都会真实跑一遍多轮检索与深度推理,因此:
+的用量算在一起。这三个工具每次调用都会真实运行对应的研究或选股流程,因此:
 
 - **API key 必须绑定账号**才能调用 research 类工具。未绑定时返回
   `error: "该 API key 未绑定用户,无法使用研究类工具;请联系 ADAMAS 为 key 绑定账号"`
@@ -597,7 +651,8 @@ research 三个工具(`submit_deep_research` / `submit_notes_report` / `submit_s
 - **频率(rpm)按每个 HTTP 请求计**,包含 `initialize`、`tools/list`、`prompts/*`、`ping` 等协议请求,不只是工具调用。超限返回 **HTTP 429**(带 `Retry-After` 头);
 - **日额度按工具调用计**,超限以工具返回中的 `error` + `retry_after_seconds` 呈现(MCP 调用本身成功)。`retry_after_seconds` 给的是**到次日 0 点(北京时间)的秒数**——那才是额度真正重置的时刻,按它退避,不要每小时空试;
 - **日额度落库,服务重启/更新不会重置**;并发超限同样按 `retry_after_seconds` 退避,密集重试只会持续消耗 rpm;
-- 用量按 key 计量落库,如需提额请联系 ADAMAS。
+- 服务对已解析的 `tools/call` 只做 best-effort 单次计量写入尝试;计量失败不影响
+  主请求,不保证持久化或 exactly-once。成功写入的用量按 key 查看,如需提额请联系 ADAMAS。
 
 ## 6. 数据口径与合规(重要)
 
@@ -616,8 +671,8 @@ research 三个工具(`submit_deep_research` / `submit_notes_report` / `submit_s
 
 | Prompt | 参数 | 产出 |
 |---|---|---|
-| `industry_brief`(行业跟踪简报) | `industry` 产业名 | 景气度 + 六维趋势 + 历史快照 → 模型偏好标的 → 成稿报告 PDF 与代表标的基本面跟踪要点,成文标 as_of、保留 disclaimer |
-| `deep_research_report`(深度研究报告) | `topic` 研究主题 | 提交 plus 档深度研究 + 等待期间取客观数据 → 综合成文(研究结论注明来自 ADAMAS 研究引擎 + 数据佐证标 as_of + 交叉验证) |
+| `industry_brief`(行业跟踪简报) | `industry` 产业名 | 景气度 + 六维趋势 + 历史快照 + 全市场模型排名中的相关代表标的 → 成稿报告 PDF 与公司基本面跟踪要点,成文标 as_of、保留 disclaimer |
+| `deep_research_report`(深度研究报告) | `topic` 研究主题 | 提交 plus 档深度研究 + 等待期间取产业数据与已发布模型排名 → 综合成文(研究结论注明来自 ADAMAS 研究引擎 + 数据佐证标 as_of + 交叉验证) |
 
 不支持 prompts 的客户端,可把上述编排写进你自己的系统提示词,方法论同源于第 7.2 节的 Skill。
 
@@ -647,7 +702,7 @@ Skill 与 MCP prompts 方法论同源:装了 Skill 的 agent 会主动按 ADAMAS
 服务端开启了 DNS-rebinding 保护,只接受 Host 白名单内的请求(`www.adamas-research.com` 等)。直连官方端点不会遇到此问题;若你在自建网关/反向代理后面转发请求,必须**透传原始 Host 头**(如 nginx `proxy_set_header Host www.adamas-research.com;`),或联系 ADAMAS 把你的域名加入白名单。
 
 **Q:返回里带 `error` 和 `retry_after_seconds`(额度/并发超限)?**
-这是结构化限流信号(MCP 调用本身是成功的,超限信息在返回内容里)。按 `retry_after_seconds` 的秒数等待后重试;把它做进你的重试逻辑,不要密集重试。日额度类的 `retry_after_seconds` 指向**次日 0 点(北京时间)**的剩余秒数,当日不必再试。
+这是结构化的业务失败信号:`CallToolResult.isError=true`,内容中保留 `error` 和退避时间;它不是 HTTP/传输故障。按 `retry_after_seconds` 的秒数等待后重试;把它做进你的重试逻辑,不要密集重试。日额度类的 `retry_after_seconds` 指向**次日 0 点(北京时间)**的剩余秒数,当日不必再试。
 
 **Q:收到 HTTP 429?**
 频率超限(每分钟调用数)走 HTTP 429,响应带标准 `Retry-After` 头和 `retry_after_seconds` 字段,按其中任一等待后重试即可。注意频率是按**每个 HTTP 请求**计的,连接握手、列工具等协议请求也计入。
@@ -655,8 +710,9 @@ Skill 与 MCP prompts 方法论同源:装了 Skill 的 agent 会主动按 ADAMAS
 **Q:任务 `failed`,错误是「任务超时未完成(服务可能重启过),请重新提交」?**
 服务滚动更新/重启会中断在跑任务,遗留任务超过 1 小时 TTL 后自动判 failed。重新提交同样的问题即可,重新提交会正常消耗一次 research 额度。
 
-**Q:提交时返回「服务即将更新维护,暂停接收新任务,请几分钟后重试」?**
-服务处于更新窗口(排空中),此时不接新任务但在跑任务会跑完。按返回的 `retry_after_seconds`(300 秒)稍后重试即可,data 类工具不受影响。
+**Q:调用工具时返回「服务即将更新维护,暂停接收新任务,请几分钟后重试」?**
+服务处于更新窗口(排空中),会暂停所有新工具调用,已接纳的调用会继续跑完。
+按返回的 `retry_after_seconds`(300 秒)稍后重试即可。
 
 **Q:研究结果里 `evidence_count` 是 0?**
 正常。evidence 计数在当前引擎(`engine: "agentic"`)下不透出统计,以 `answer` 正文中的引用为准;`mode` 回显你提交的档位。
