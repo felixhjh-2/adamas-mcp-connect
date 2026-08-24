@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import re
+import subprocess
+from hashlib import sha256
 from pathlib import Path
 
 
@@ -24,11 +26,57 @@ STANDARD_TOOLS = {
     "submit_notes_report",
     "get_research_task",
 }
+STANDARD_PROMPTS = {"industry_brief", "deep_research_report"}
+
+# Hashes keep non-Standard capability names out of the public repository while still
+# making every checked-in text artifact fail closed if one is accidentally published.
+# This covers five higher-tier tool/prompt/metadata identifiers, six internal tool
+# identifiers, and the internal tier label. The legal Standard research mode `pro`
+# is deliberately not forbidden.
+FORBIDDEN_PUBLIC_IDENTIFIER_DIGESTS = {
+    "2125ebbc4985a7d986156c75da7c6317b9a741c3de95bc89f4433385b7aa10ff",
+    "53bc99f84c3e122726e48034a269688f373a009e30d87f2bccdbc0fe850af132",
+    "783b9c1f43a8b6a014ffa5f6a3318b61c9dd45314217673399ca7edc1fa3b5c7",
+    "72bd81e15eac6b4fe13cb7dc417535ba367222f5d3b52b74177db6d11a7259af",
+    "7900b7fd6b6e8630267054a58bda0654f0dc9c738eeba2856f41d750f336cf5b",
+    "82f9baa3884ca4be6cfc6f493aa95da1579d1d16b2b658c4f1001806781873f5",
+    "d039b38185cd0416ff3e361baf5094a7b27545139e4b146ca4578a86fb1d45bd",
+    "29c7120b57d51db00540dafe21d360d842d68aabb97ad1c8d69a723718f4d5ad",
+    "5b7f4c0b7ee3d9992fc000dfe7035d7312cb67a84fdc232401b5169f7b465daf",
+    "0f41974be8adba6a6e653496d0a9d44e7883201f583016e746dc205360c4eb53",
+    "356d78ad6e3b4a0eac17b63aeb3d8af2185500d5e44fc3f6df446dcbe67e126c",
+    "9baf3a40312f39849f46dad1040f2f039f1cffa1238c41e9db675315cfad39b6",
+}
 
 
 def require(condition: bool, message: str) -> None:
     if not condition:
         raise SystemExit(message)
+
+
+def verify_public_boundary() -> None:
+    leaks: list[str] = []
+    tracked = subprocess.run(
+        ["git", "-C", str(ROOT), "ls-files", "-z"],
+        check=True,
+        capture_output=True,
+        text=True,
+    ).stdout.split("\0")
+    for relative_path in sorted(filter(None, tracked)):
+        path = ROOT / relative_path
+        try:
+            lines = [relative_path, *path.read_text(encoding="utf-8").splitlines()]
+        except UnicodeDecodeError:
+            continue
+        for line_number, line in enumerate(lines):
+            identifiers = re.findall(r"\b[a-z][a-z0-9_]{2,}\b", line.lower())
+            if any(
+                sha256(identifier.encode()).hexdigest()
+                in FORBIDDEN_PUBLIC_IDENTIFIER_DIGESTS
+                for identifier in identifiers
+            ):
+                leaks.append(f"{path.relative_to(ROOT)}:{line_number}")
+    require(not leaks, f"公开材料含非 Standard 能力标识，位置: {leaks}")
 
 
 def main() -> None:
@@ -42,9 +90,19 @@ def main() -> None:
         / "adamas-research-report"
         / "SKILL.md"
     ).read_text(encoding="utf-8")
+    quickstart = (ROOT / "examples" / "quickstart.py").read_text(encoding="utf-8")
+    workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
 
     headings = set(re.findall(r"^#### `([^`]+)`", usage, re.MULTILINE))
     require(headings == STANDARD_TOOLS, f"工具清单漂移: {sorted(headings)}")
+    prompt_section = usage.split("### 7.1 MCP Prompts", 1)[1].split("### 7.2", 1)[0]
+    prompt_names = set(
+        re.findall(r"^\| `([a-z][a-z0-9_]+)`", prompt_section, re.MULTILINE)
+    )
+    require(
+        prompt_names == STANDARD_PROMPTS,
+        f"Prompt 清单漂移: {sorted(prompt_names)}",
+    )
     readme_table = readme.split("## 能做什么", 1)[1].split("典型玩法", 1)[0]
     readme_tools = set(re.findall(r"`([a-z][a-z0-9_]+)`", readme_table))
     require(
@@ -79,10 +137,20 @@ def main() -> None:
     require("11 个 data 类 + 3 个 research 提交工具" in usage, "工具分类计数漂移")
     require("选股任务并发已满,请稍后重试" in usage, "选股并发错误文案漂移")
     require("CallToolResult.isError" in usage, "使用文档缺 isError 业务失败语义")
+    sdk_requirement = "mcp>=1.28.1,<2"
+    for document in (readme, usage, quickstart, workflow):
+        require(sdk_requirement in document, f"公开材料缺已验证 SDK 版本 {sdk_requirement}")
+    require(
+        "python -m scripts.verify_quickstart" in workflow,
+        "CI 未执行 quickstart SDK 与错误处理检查",
+    )
+    for marker in ("result.isError", 'structured.get("error")', "retry_after_seconds"):
+        require(marker in quickstart, f"quickstart 错误处理缺 {marker}")
     require(
         "scratchpad/" + "prod_smoke.py" not in usage,
         "公开文档引用了不存在的生产脚本",
     )
+    verify_public_boundary()
 
     plugin = json.loads(
         (
