@@ -1,0 +1,65 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  standard-contract:
+    name: Standard contract
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install Claude Code validator
+        run: npm install --global @anthropic-ai/claude-code@2.1.241
+
+      - name: Verify Standard contract
+        run: python scripts/verify_standard_contract.py
+
+      - name: Compile Python sources
+        run: python -m compileall -q examples scripts
+
+      - name: Parse JSON files
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          paths = sorted(Path(".").rglob("*.json"))
+          if not paths:
+              raise SystemExit("No JSON files found")
+          for path in paths:
+              json.loads(path.read_text(encoding="utf-8"))
+          print(f"PASS: parsed {len(paths)} JSON files")
+          PY
+
+      - name: Validate Claude plugin
+        run: claude plugin validate --strict plugins/adamas-research-report
+
+      - name: Validate Claude marketplace
+        run: claude plugin validate --strict .claude-plugin/marketplace.json
