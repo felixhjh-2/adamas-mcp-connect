@@ -4,7 +4,7 @@
     pip install mcp
     ADAMAS_API_KEY=<your-api-key> python quickstart.py
 
-演示推荐调用顺序:能力地图 → 解析标的 → 信号面板 → 当日信息流。
+演示推荐调用顺序:能力地图 → 产业景气度 → 已发布模型选股 → 当日信息流。
 API key 只从环境变量读取,绝不要写进代码。
 """
 import asyncio
@@ -12,8 +12,9 @@ import json
 import os
 import sys
 
+import httpx
 from mcp import ClientSession
-from mcp.client.streamable_http import streamablehttp_client
+from mcp.client.streamable_http import streamable_http_client
 
 URL = "https://www.adamas-research.com/mcp"
 
@@ -30,8 +31,14 @@ async def main() -> None:
     if not api_key:
         sys.exit("请先设置环境变量 ADAMAS_API_KEY(向 ADAMAS 团队申请)")
 
-    headers = {"Authorization": f"Bearer {api_key}"}
-    async with streamablehttp_client(URL, headers=headers) as (read, write, _):
+    async with (
+        httpx.AsyncClient(
+            headers={"Authorization": f"Bearer {api_key}"}
+        ) as http_client,
+        streamable_http_client(
+            URL, http_client=http_client
+        ) as (read, write, _),
+    ):
         async with ClientSession(read, write) as session:
             await session.initialize()
 

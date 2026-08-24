@@ -1,5 +1,6 @@
 {
   "name": "adamas",
+  "description": "ADAMAS remote MCP 接入与投研报告方法论插件。",
   "owner": {
     "name": "ADAMAS Research",
     "url": "https://www.adamas-research.com"
