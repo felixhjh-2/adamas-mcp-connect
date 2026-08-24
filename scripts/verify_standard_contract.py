@@ -96,12 +96,16 @@ def main() -> None:
     headings = set(re.findall(r"^#### `([^`]+)`", usage, re.MULTILINE))
     require(headings == STANDARD_TOOLS, f"工具清单漂移: {sorted(headings)}")
     prompt_section = usage.split("### 7.1 MCP Prompts", 1)[1].split("### 7.2", 1)[0]
-    prompt_names = set(
-        re.findall(r"^\| `([a-z][a-z0-9_]+)`", prompt_section, re.MULTILINE)
+    prompt_rows = re.findall(
+        r"^\| `([a-z][a-z0-9_]+)`",
+        prompt_section,
+        re.MULTILINE,
     )
     require(
-        prompt_names == STANDARD_PROMPTS,
-        f"Prompt 清单漂移: {sorted(prompt_names)}",
+        len(prompt_rows) == len(STANDARD_PROMPTS)
+        and len(set(prompt_rows)) == len(prompt_rows)
+        and set(prompt_rows) == STANDARD_PROMPTS,
+        f"Prompt 清单漂移: {prompt_rows}",
     )
     readme_table = readme.split("## 能做什么", 1)[1].split("典型玩法", 1)[0]
     readme_tools = set(re.findall(r"`([a-z][a-z0-9_]+)`", readme_table))
