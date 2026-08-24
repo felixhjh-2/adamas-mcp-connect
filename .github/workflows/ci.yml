@@ -38,8 +38,14 @@ jobs:
       - name: Install Claude Code validator
         run: npm install --global @anthropic-ai/claude-code@2.1.241
 
+      - name: Install verified MCP SDK
+        run: python -m pip install "mcp>=1.28.1,<2"
+
       - name: Verify Standard contract
         run: python scripts/verify_standard_contract.py
+
+      - name: Verify quickstart SDK compatibility
+        run: python -m scripts.verify_quickstart
 
       - name: Compile Python sources
         run: python -m compileall -q examples scripts

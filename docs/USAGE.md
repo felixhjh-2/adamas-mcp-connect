@@ -105,6 +105,12 @@ OAuth,请改用 Claude Code、Cursor、Codex 或 WorkBuddy。
 
 ### 2.6 自建 agent(Python,官方 mcp SDK)
 
+先安装已验证的新客户端 API 版本:
+
+```bash
+python -m pip install "mcp>=1.28.1,<2"
+```
+
 ```python
 import asyncio, json
 import httpx

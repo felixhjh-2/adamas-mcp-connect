@@ -88,7 +88,7 @@ Bearer header 的 remote server。请改用 Claude Code、Cursor、Codex 或 Wor
 见 [examples/quickstart.py](examples/quickstart.py):
 
 ```bash
-pip install mcp
+python -m pip install "mcp>=1.28.1,<2"
 ADAMAS_API_KEY=<your-api-key> python examples/quickstart.py
 ```
 
