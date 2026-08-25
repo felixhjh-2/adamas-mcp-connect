@@ -9,6 +9,8 @@ Standard 公开契约同步为 15 个工具:
 - 公开文档与 Skill 补齐了宏观使用顺序、九维度口径、日期选择及
   `score_ready=false` 时不得臆造分数的约束;
 - 合规口径明确 `China-Taiwan` 只在 `regions` 中出现,不计入国家数;
+- 新增 Kimi Code 接入说明:通过 `~/.kimi-code/mcp.json` 配置 remote HTTP MCP,
+  Bearer key 从 `ADAMAS_API_KEY` 环境变量读取,并补齐 Agent Skill 安装路径;
 - Claude Code 插件版本升级到 2.3.0。
 
 ## 2026-08-24
