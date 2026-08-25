@@ -7,7 +7,7 @@
 ADAMAS MCP 是 ADAMAS 金融投研平台的对外能力分发服务,以
 **remote MCP server(streamable HTTP)** 形态提供。它适配能配置自定义
 remote MCP endpoint 与 `Authorization: Bearer` 请求头的客户端
-(WorkBuddy、Claude Code、Cursor、Codex、自建 agent 框架等)。
+(WorkBuddy、Kimi Code、Claude Code、Cursor、Codex、自建 agent 框架等)。
 
 > **接入前提**:当前服务未实现 MCP OAuth discovery / 自动授权,
 > 需手工配置端点和 Bearer key。如果你的客户端版本不能为 remote MCP
@@ -29,7 +29,7 @@ remote MCP endpoint 与 `Authorization: Bearer` 请求头的客户端
 - **端点**:`https://www.adamas-research.com/mcp`
 - **传输**:MCP streamable HTTP(无状态,支持断线重连后重新调用)
 - **认证**:每个请求携带 HTTP 头 `Authorization: Bearer <your-api-key>`,API key 向 ADAMAS 申请获取(key 明文只在发放时出现一次,请妥善保管)
-- **内容**:本公开主文档对应 Standard 档,**15 个工具**(12 个 data 类 + 3 个 research 提交工具)+ 2 个预置 prompts + 1 个 WorkBuddy/OpenClaw Skill 包。Standard 包含模型选股排名、产业链量化选股与全球宏观入口。本公开文档只描述 Standard 契约。
+- **内容**:本公开主文档对应 Standard 档,**15 个工具**(12 个 data 类 + 3 个 research 提交工具)+ 2 个预置 prompts + 1 个 Agent Skill 包。Standard 包含模型选股排名、产业链量化选股与全球宏观入口。本公开文档只描述 Standard 契约。
 
 两类工具的契约有本质区别,集成前务必理解(详见第 3、6 节):
 
@@ -52,7 +52,48 @@ remote MCP endpoint 与 `Authorization: Bearer` 请求头的客户端
 
 保存后,在会话中即可看到 `list_capabilities`、`get_industry_scores` 等工具。建议同时安装配套 Skill(见第 7 节),让 agent 按 ADAMAS 推荐的方法论用这些工具。
 
-### 2.2 Claude Code
+### 2.2 Kimi Code
+
+Kimi Code CLI 原生支持 remote HTTP MCP,并支持通过 `bearerTokenEnvVar` 从环境变量
+读取 Bearer token。先向启动 Kimi Code 的进程注入 key:
+
+```bash
+export ADAMAS_API_KEY=<your-api-key>
+```
+
+再在用户级 `~/.kimi-code/mcp.json`(跨项目共享),或当前项目的
+`.kimi-code/mcp.json` 中加入:
+
+```json
+{
+  "mcpServers": {
+    "adamas": {
+      "url": "https://www.adamas-research.com/mcp",
+      "bearerTokenEnvVar": "ADAMAS_API_KEY"
+    }
+  }
+}
+```
+
+`url` 条目未写 `transport` 时,Kimi Code 会按 HTTP MCP 连接。保存后新开一个
+Kimi Code 会话,输入 `/mcp` 查看 `adamas` 的连接状态与工具清单。也可在 TUI
+运行 `/mcp-config` 管理 server。Kimi 官方说明:
+[Model Context Protocol](https://www.kimi.com/code/docs/kimi-code-cli/customization/mcp.html)。
+
+`ADAMAS_API_KEY` 只填原始 `adamas_...` key,不要带 `Bearer ` 前缀;
+Kimi Code 会据此生成 `Authorization: Bearer <your-api-key>` 请求头。
+
+Kimi Code for VS Code 同样支持 HTTP MCP。当扩展与 CLI 使用同一
+`KIMI_CODE_HOME` 时会共享 `mcp.json`,因此可直接复用上述配置;同时确保启动
+VS Code 的进程能读取 `ADAMAS_API_KEY`,然后新开会话。扩展内也可从齿轮菜单 →
+MCP Servers 查看和测试连接。参见
+[Kimi Code for VS Code 官方文档](https://www.kimi.com/code/docs/kimi-code-for-vscode/customization.html)
+和[扩展官方说明](https://github.com/MoonshotAI/kimi-code/tree/main/apps/vscode)。
+
+> 本节的“Kimi”特指 **Kimi Code CLI / Kimi Code for VS Code**。普通 Kimi
+> 网页/App 不读取 `~/.kimi-code/mcp.json`,不能照搬这段本地配置。
+
+### 2.3 Claude Code
 
 ```bash
 claude mcp add adamas --transport http https://www.adamas-research.com/mcp \
@@ -61,7 +102,7 @@ claude mcp add adamas --transport http https://www.adamas-research.com/mcp \
 
 验证:`claude mcp list` 应显示 adamas 已连接;会话内 `/mcp` 可查看工具清单。
 
-### 2.3 Codex
+### 2.4 Codex
 
 在 `~/.codex/config.toml`(或已信任项目的 `.codex/config.toml`)中加入:
 
@@ -77,7 +118,7 @@ default_tools_approval_mode = "writes"
 annotations;因此建议保留 `writes`:纯查询可自动调用,提交研究等非只读操作再请求
 用户确认。重启 Codex 后可用 `/mcp` 查看连接与工具。
 
-### 2.4 Cursor
+### 2.5 Cursor
 
 在 Cursor 的 `~/.cursor/mcp.json` 中加入:
 
@@ -95,16 +136,16 @@ annotations;因此建议保留 `writes`:纯查询可自动调用,提交研究等
 向启动 Cursor 的进程注入 `ADAMAS_API_KEY` 后重启 Cursor。密钥不写进
 `mcp.json`;Cursor 会按 `url` 自动使用 remote HTTP transport。
 
-### 2.5 Claude Desktop
+### 2.6 Claude Desktop
 
 ADAMAS 当前的自定义 Bearer 认证不能直接配置进 Claude Desktop 的 remote
 connector。Claude Desktop 的 remote MCP 需从 Settings → Connectors 添加,
 当前界面提供免认证或 OAuth 流程;
 `claude_desktop_config.json` 只配本地 server,不会按上面 Cursor 的 JSON 连接
 remote HTTP server。由于 ADAMAS MCP 目前是自定义 Bearer header 且尚未实现
-OAuth,请改用 Claude Code、Cursor、Codex 或 WorkBuddy。
+OAuth,请改用 Kimi Code、Claude Code、Cursor、Codex 或 WorkBuddy。
 
-### 2.6 自建 agent(Python,官方 mcp SDK)
+### 2.7 自建 agent(Python,官方 mcp SDK)
 
 先安装已验证的新客户端 API 版本:
 
@@ -153,9 +194,9 @@ async def main():
 asyncio.run(main())
 ```
 
-工具返回同时携带 structured output(`result.structuredContent`,JSON dict)与等价的 JSON 文本(TextContent);上例的 `parse` 两者都兼容,建议照抄。agent 类客户端(Claude Code / WorkBuddy / Cursor 等)无需关心,模型直接读 JSON。
+工具返回同时携带 structured output(`result.structuredContent`,JSON dict)与等价的 JSON 文本(TextContent);上例的 `parse` 两者都兼容,建议照抄。agent 类客户端(Kimi Code / Claude Code / WorkBuddy / Cursor 等)无需关心,模型直接读 JSON。
 
-### 2.7 接入后的第一次调用(约定)
+### 2.8 接入后的第一次调用(约定)
 
 1. **先调 `list_capabilities`**:拿覆盖范围与各数据域新鲜度(`freshness`),行情为交易日盘后导入,别把旧数据当今天的;
 2. **标的名可先解析**:用 `search_assets` 把公司名/代码解析成标准信息(行业分类/市场风格属性);
@@ -787,7 +828,7 @@ research 三个提交工具(`submit_deep_research` / `submit_stock_screen` /
    `regions` 中的中国台湾地区,不计入国家数;当 `score_ready=false` 时,
    `score=null` 表示周期打分尚未上线,不得臆造分数或排名。
 
-## 7. 预置 Prompts 与 WorkBuddy Skill
+## 7. 预置 Prompts 与 Agent Skill
 
 ### 7.1 MCP Prompts(随 server 下发)
 
@@ -800,7 +841,7 @@ research 三个提交工具(`submit_deep_research` / `submit_stock_screen` /
 
 不支持 prompts 的客户端,可把上述编排写进你自己的系统提示词,方法论同源于第 7.2 节的 Skill。
 
-### 7.2 WorkBuddy / OpenClaw Skill 包
+### 7.2 WorkBuddy / OpenClaw / Kimi Code Skill 包
 
 Skill 包与本文档一起发布在**公开接入仓库** <https://github.com/felixhjh-2/adamas-mcp-connect>
 (路径 `plugins/adamas-research-report/skills/adamas-research-report/`),内容为「ADAMAS 投研报告」方法论:先看地图再取数、代码先解析、全球宏观先拉覆盖全景再读正文、数据与观点分开取分开写、限流退避、成文规范(日期标注、三类内容区分、disclaimer 原文保留、六维趋势符号含义)以及六个常用剧本(行业跟踪简报/个股解读/全球宏观对比/产业链量化选股/深度专题报告/晨会纪要一页)。
@@ -808,6 +849,11 @@ Skill 包与本文档一起发布在**公开接入仓库** <https://github.com/f
 安装方式:
 
 - **WorkBuddy**:先接入 ADAMAS MCP 连接器(见 2.1),再下载上述仓库,把 Skill 目录作为技能导入(入口一般在 技能/Skill 管理 → 导入本地技能包);
+- **Kimi Code**:把 Skill 目录复制到用户级
+  `~/.kimi-code/skills/adamas-research-report/` 或项目级
+  `.kimi-code/skills/adamas-research-report/`,新开会话后可用
+  `/skill:adamas-research-report` 显式调用。目录规则见
+  [Kimi Code 官方 Agent Skills 文档](https://www.kimi.com/code/docs/kimi-code-cli/customization/skills.html);
 - **Claude Code**:插件一步装齐(MCP 连接 + Skill,key 走环境变量 `ADAMAS_API_KEY`):
   会话内 `/plugin marketplace add felixhjh-2/adamas-mcp-connect` → `/plugin install adamas-research-report@adamas`;
 - **OpenClaw / 其他支持 Agent Skills 的框架**:把 Skill 目录放入框架的 skills 目录即可(触发条件与用法在 `SKILL.md` frontmatter 中)。

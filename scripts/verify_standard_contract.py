@@ -163,6 +163,50 @@ def main() -> None:
             require(marker in document, f"公开接入口径缺 {marker}")
         require("${env:ADAMAS_API_KEY}" in document, "Cursor 配置未从环境变量读取 key")
         require('"type": "http"' not in document, "Cursor 配置仍携带多余 transport type")
+    kimi_sections = (
+        readme.split("### Kimi Code", 1)[1].split("### Claude Code", 1)[0],
+        usage.split("### 2.2 Kimi Code", 1)[1].split("### 2.3 Claude Code", 1)[0],
+    )
+    expected_kimi_config = {
+        "mcpServers": {
+            "adamas": {
+                "url": "https://www.adamas-research.com/mcp",
+                "bearerTokenEnvVar": "ADAMAS_API_KEY",
+            }
+        }
+    }
+    for section in kimi_sections:
+        for marker in (
+            "~/.kimi-code/mcp.json",
+            "ADAMAS_API_KEY",
+            "/mcp",
+            "https://www.kimi.com/code/docs/kimi-code-cli/customization/mcp.html",
+            "Kimi Code for VS Code",
+            "KIMI_CODE_HOME",
+            "共享",
+            "https://www.kimi.com/code/docs/kimi-code-for-vscode/customization.html",
+            "https://github.com/MoonshotAI/kimi-code/tree/main/apps/vscode",
+            "不要带 `Bearer ` 前缀",
+        ):
+            require(marker in section, f"Kimi Code 接入口径缺 {marker}")
+        match = re.search(r"```json\n(\{.*?\})\n```", section, re.DOTALL)
+        require(match is not None, "Kimi Code 接入缺 JSON 配置示例")
+        require(
+            json.loads(match.group(1)) == expected_kimi_config,
+            "Kimi Code MCP 配置漂移",
+        )
+    kimi_skill_sections = (
+        readme.split("## 安装 Skill", 1)[1].split("## 申请 API key", 1)[0],
+        usage.split("### 7.2 WorkBuddy / OpenClaw / Kimi Code Skill 包", 1)[1].split(
+            "## 8. FAQ", 1
+        )[0],
+    )
+    for section in kimi_skill_sections:
+        require("/skill:adamas-research-report" in section, "Kimi Code Skill 调用说明缺失")
+        require(
+            ".kimi-code/skills/adamas-research-report/" in section,
+            "Kimi Code Skill 安装路径缺失",
+        )
     require(len(STANDARD_DATA_TOOLS) == 12, "data 类精确计数漂移")
     require("12 个 data 类 + 3 个 research 提交工具" in usage, "工具分类计数漂移")
     for document in (usage, skill):
