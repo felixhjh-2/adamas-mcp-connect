@@ -10,7 +10,7 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-STANDARD_TOOLS = {
+STANDARD_TOOL_ORDER = (
     "list_capabilities",
     "search_assets",
     "get_model_picks",
@@ -21,10 +21,17 @@ STANDARD_TOOLS = {
     "get_industry_graph",
     "get_strategy_reports",
     "get_info_feed",
+    "get_global_macro",
     "submit_deep_research",
     "submit_stock_screen",
     "submit_notes_report",
     "get_research_task",
+)
+STANDARD_TOOLS = set(STANDARD_TOOL_ORDER)
+STANDARD_DATA_TOOLS = STANDARD_TOOLS - {
+    "submit_deep_research",
+    "submit_stock_screen",
+    "submit_notes_report",
 }
 STANDARD_PROMPTS = {"industry_brief", "deep_research_report"}
 
@@ -93,8 +100,17 @@ def main() -> None:
     quickstart = (ROOT / "examples" / "quickstart.py").read_text(encoding="utf-8")
     workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
 
-    headings = set(re.findall(r"^#### `([^`]+)`", usage, re.MULTILINE))
-    require(headings == STANDARD_TOOLS, f"工具清单漂移: {sorted(headings)}")
+    heading_rows = re.findall(r"^#### `([^`]+)`", usage, re.MULTILINE)
+    headings = set(heading_rows)
+    require(
+        len(heading_rows) == len(STANDARD_TOOL_ORDER)
+        and headings == STANDARD_TOOLS,
+        f"工具精确白名单漂移: {heading_rows}",
+    )
+    require(
+        tuple(heading_rows) == STANDARD_TOOL_ORDER,
+        f"工具章节顺序漂移: {heading_rows}",
+    )
     prompt_section = usage.split("### 7.1 MCP Prompts", 1)[1].split("### 7.2", 1)[0]
     prompt_rows = re.findall(
         r"^\| `([a-z][a-z0-9_]+)`",
@@ -113,14 +129,23 @@ def main() -> None:
         readme_tools == STANDARD_TOOLS,
         f"README 工具速览漂移: {sorted(readme_tools)}",
     )
+    require(
+        len(readme_tools) == len(STANDARD_TOOL_ORDER) == 15,
+        f"Standard 工具计数漂移: README={len(readme_tools)} contract={len(STANDARD_TOOL_ORDER)}",
+    )
     for document in (readme, usage):
-        require("14 个工具" in document, "公开文档缺 Standard 14 工具口径")
-        require("13" + " 个工具" not in document, "公开文档仍残留旧工具数口径")
+        require("15 个工具" in document, "公开文档缺 Standard 15 工具口径")
+        for stale_count in ("13", "14"):
+            require(
+                stale_count + " 个工具" not in document,
+                f"公开文档仍残留旧工具数口径: {stale_count}",
+            )
     for document in (readme, usage, skill):
         for required in (
             "get_model_picks",
             "submit_stock_screen",
             "check_company_coverage",
+            "get_global_macro",
         ):
             require(required in document, f"公开材料缺 {required}")
     require("model_picks_as_of" in usage, "使用文档缺 model_picks_as_of")
@@ -138,7 +163,40 @@ def main() -> None:
             require(marker in document, f"公开接入口径缺 {marker}")
         require("${env:ADAMAS_API_KEY}" in document, "Cursor 配置未从环境变量读取 key")
         require('"type": "http"' not in document, "Cursor 配置仍携带多余 transport type")
-    require("11 个 data 类 + 3 个 research 提交工具" in usage, "工具分类计数漂移")
+    require(len(STANDARD_DATA_TOOLS) == 12, "data 类精确计数漂移")
+    require("12 个 data 类 + 3 个 research 提交工具" in usage, "工具分类计数漂移")
+    for document in (usage, skill):
+        for marker in (
+            "get_global_macro()",
+            "China-Taiwan",
+            "regions",
+            "score_ready=false",
+            "report_date",
+            "disclaimer",
+        ):
+            require(marker in document, f"全球宏观公开契约缺 {marker}")
+    for marker in (
+        'get_global_macro(country="China")',
+        'dimension="industry"',
+        'report_date="2026-08-04"',
+        '"country_name": "中国台湾地区"',
+        "countries[].score",
+        "regions[].score",
+        "meta.disclaimer",
+        "真实成功响应固定返回完整 9 项",
+        "真实成功响应固定返回完整 9 格",
+    ):
+        require(marker in usage, f"全球宏观使用文档缺 {marker}")
+    require(
+        '"country_name": "中国台湾"' not in usage,
+        "全球宏观地区示例不得使用旧展示名“中国台湾”",
+    )
+    require(
+        usage.index("get_global_macro()")
+        < usage.index('get_global_macro(country="China")')
+        < usage.index('dimension="industry"'),
+        "全球宏观调用顺序未保持 overview -> country -> report",
+    )
     require("选股任务并发已满,请稍后重试" in usage, "选股并发错误文案漂移")
     require("CallToolResult.isError" in usage, "使用文档缺 isError 业务失败语义")
     sdk_requirement = "mcp>=1.28.1,<2"
@@ -173,7 +231,10 @@ def main() -> None:
             encoding="utf-8"
         )
     )
-    require(plugin["version"] == "2.2.0", "插件版本未升级到 2.2.0")
+    require(plugin["version"] == "2.3.0", "插件版本未升级到 2.3.0")
+    for manifest_text in (plugin["description"], marketplace["plugins"][0]["description"]):
+        require("15" in manifest_text, "插件清单缺 Standard 15 工具口径")
+        require("全球宏观" in manifest_text, "插件清单缺全球宏观能力")
     require(marketplace["plugins"][0]["name"] == plugin["name"], "marketplace/plugin 名称漂移")
     require("adamas" in mcp["mcpServers"], "插件缺 adamas MCP 配置")
     print("PASS: public Standard contract is internally consistent")

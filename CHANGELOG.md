@@ -1,5 +1,16 @@
 # CHANGELOG
 
+## 2026-08-25
+
+Standard 公开契约同步为 15 个工具:
+
+- 新增只读 `get_global_macro`,可先拉取经济体与九维度覆盖全景,
+  再读某个经济体的最新或历史报告正文;
+- 公开文档与 Skill 补齐了宏观使用顺序、九维度口径、日期选择及
+  `score_ready=false` 时不得臆造分数的约束;
+- 合规口径明确 `China-Taiwan` 只在 `regions` 中出现,不计入国家数;
+- Claude Code 插件版本升级到 2.3.0。
+
 ## 2026-08-24
 
 Standard 公开契约同步为 14 个工具:
