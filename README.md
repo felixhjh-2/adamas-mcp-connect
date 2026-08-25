@@ -27,6 +27,32 @@
 
 建议同时导入配套 Skill(见下文「安装 Skill」),让你的 agent 按 ADAMAS 推荐的方法论用这些工具。
 
+### Kimi Code
+
+Kimi Code 原生支持 remote HTTP MCP,并可通过环境变量读取 Bearer key。在
+`~/.kimi-code/mcp.json`(或当前项目的 `.kimi-code/mcp.json`)中加入:
+
+```json
+{
+  "mcpServers": {
+    "adamas": {
+      "url": "https://www.adamas-research.com/mcp",
+      "bearerTokenEnvVar": "ADAMAS_API_KEY"
+    }
+  }
+}
+```
+
+向启动 Kimi Code 的进程注入 `ADAMAS_API_KEY`,值只填原始 `adamas_...` key,
+不要带 `Bearer ` 前缀。新开会话后用 `/mcp` 查看连接状态与工具清单。
+Kimi Code for VS Code 也支持 HTTP MCP;当扩展与 CLI 使用同一 `KIMI_CODE_HOME`
+时会共享上述 MCP 配置。详见
+[Kimi Code CLI MCP 文档](https://www.kimi.com/code/docs/kimi-code-cli/customization/mcp.html)、
+[Kimi Code for VS Code 文档](https://www.kimi.com/code/docs/kimi-code-for-vscode/customization.html)
+和[扩展官方说明](https://github.com/MoonshotAI/kimi-code/tree/main/apps/vscode)。
+
+> 这里的 Kimi 接入特指 **Kimi Code**;普通 Kimi 网页/App 不使用这份本地 MCP 配置。
+
 ### Claude Code
 
 ```bash
@@ -81,7 +107,7 @@ ADAMAS 当前的自定义 Bearer 认证不能直接配置进 Claude Desktop 的 
 connector。Claude Desktop 的 remote MCP 需从 Settings → Connectors 添加,
 当前界面提供免认证或 OAuth 流程;
 `claude_desktop_config.json` 只配置本地 server,不能用来连接这种带自定义
-Bearer header 的 remote server。请改用 Claude Code、Cursor、Codex 或 WorkBuddy。
+Bearer header 的 remote server。请改用 Kimi Code、Claude Code、Cursor、Codex 或 WorkBuddy。
 
 ### 自建 agent(Python)
 
@@ -115,6 +141,9 @@ Skill 是「怎么用好这些工具」的方法论包:先看地图再取数、�
 
 - **WorkBuddy / OpenClaw**:下载本仓库,把 `plugins/adamas-research-report/skills/adamas-research-report/`
   整个目录作为技能导入(技能管理 → 导入本地技能包);
+- **Kimi Code**:把该目录复制到 `~/.kimi-code/skills/adamas-research-report/`
+  (或项目 `.kimi-code/skills/adamas-research-report/`),新开会话后可用
+  `/skill:adamas-research-report` 显式调用;
 - **Claude Code**:上面的插件方式自动装;或手动拷贝该目录到项目 `.claude/skills/`;
 - **其他 Agent 框架**:把该目录放进框架的 skills 目录即可(触发条件写在 SKILL.md frontmatter)。
 
