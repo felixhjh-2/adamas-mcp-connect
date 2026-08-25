@@ -1,5 +1,28 @@
 # CHANGELOG
 
+## 2026-08-25
+
+Standard 公开契约同步为 15 个工具:
+
+- 新增只读 `get_global_macro`,可先拉取经济体与九维度覆盖全景,
+  再读某个经济体的最新或历史报告正文;
+- 公开文档与 Skill 补齐了宏观使用顺序、九维度口径、日期选择及
+  `score_ready=false` 时不得臆造分数的约束;
+- 合规口径明确 `China-Taiwan` 只在 `regions` 中出现,不计入国家数;
+- Claude Code 插件版本升级到 2.3.0。
+
+## 2026-08-24
+
+Standard 公开契约同步为 14 个工具:
+
+- 明确 `get_model_picks`(已发布模型选股排名)与 `submit_stock_screen`
+  (产业链量化选股任务)属于 Standard,并补齐 `check_company_coverage` 的入口说明;
+- Skill 改为公司名单先批量查覆盖,并禁止把 ADAMAS 细分产业名直接当成
+  `get_model_picks.asset_class_l1`;
+- 能力地图口径补充 `model_picks_as_of`,客户端接入说明与业务错误的
+  `CallToolResult.isError` 语义同步线上契约;
+- Claude Code 插件版本升级到 2.2.0。
+
 ## 2026-08-11
 
 文档补漏与错误文案对齐:
