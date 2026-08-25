@@ -1,5 +1,6 @@
 {
   "name": "adamas",
+  "description": "ADAMAS remote MCP 接入与投研报告方法论插件。",
   "owner": {
     "name": "ADAMAS Research",
     "url": "https://www.adamas-research.com"
@@ -8,7 +9,7 @@
     {
       "name": "adamas-research-report",
       "source": "./plugins/adamas-research-report",
-      "description": "ADAMAS 投研能力接入:MCP 连接(标准档 14 个 A股/港股投研工具)+ 投研报告方法论 Skill。需要 ADAMAS_API_KEY 环境变量(向 ADAMAS 团队申请)。"
+      "description": "ADAMAS 投研能力接入:MCP 连接(Standard 档 15 个投研工具,含全球宏观)+ 投研报告方法论 Skill。需要 ADAMAS_API_KEY 环境变量(向 ADAMAS 团队申请)。"
     }
   ]
 }

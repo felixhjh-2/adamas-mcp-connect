@@ -1,10 +1,10 @@
 """ADAMAS MCP 自建 agent 快速上手(官方 mcp SDK)。
 
 运行:
-    pip install mcp
+    python -m pip install "mcp>=1.28.1,<2"
     ADAMAS_API_KEY=<your-api-key> python quickstart.py
 
-演示推荐调用顺序:能力地图 → 解析标的 → 信号面板 → 当日信息流。
+演示推荐调用顺序:能力地图 → 产业景气度 → 已发布模型选股 → 当日信息流。
 API key 只从环境变量读取,绝不要写进代码。
 """
 import asyncio
@@ -12,8 +12,9 @@ import json
 import os
 import sys
 
+import httpx
 from mcp import ClientSession
-from mcp.client.streamable_http import streamablehttp_client
+from mcp.client.streamable_http import streamable_http_client
 
 URL = "https://www.adamas-research.com/mcp"
 
@@ -25,13 +26,35 @@ def parse(result):
     return json.loads(result.content[0].text)
 
 
+def error_info(result, payload):
+    """同时读取 MCP 错误标记与结构化业务错误/退避时间。"""
+    structured = result.structuredContent
+    error = structured.get("error") if isinstance(structured, dict) else None
+    retry_after = (
+        structured.get("retry_after_seconds")
+        if isinstance(structured, dict)
+        else None
+    )
+    if error is None and isinstance(payload, dict):
+        error = payload.get("error")
+    if retry_after is None and isinstance(payload, dict):
+        retry_after = payload.get("retry_after_seconds")
+    return bool(result.isError or error), error, retry_after
+
+
 async def main() -> None:
     api_key = os.environ.get("ADAMAS_API_KEY", "")
     if not api_key:
         sys.exit("请先设置环境变量 ADAMAS_API_KEY(向 ADAMAS 团队申请)")
 
-    headers = {"Authorization": f"Bearer {api_key}"}
-    async with streamablehttp_client(URL, headers=headers) as (read, write, _):
+    async with (
+        httpx.AsyncClient(
+            headers={"Authorization": f"Bearer {api_key}"}
+        ) as http_client,
+        streamable_http_client(
+            URL, http_client=http_client
+        ) as (read, write, _),
+    ):
         async with ClientSession(read, write) as session:
             await session.initialize()
 
@@ -58,9 +81,14 @@ async def main() -> None:
                     print(f"  [{it['score']}] {it['title']}")
 
             # 4) 业务层错误的正确处理方式:检查返回里的 error / retry_after_seconds
-            bad = parse(await session.call_tool("get_company_tracking", {"company": "不存在的公司名xx"}))
-            if "error" in bad:
-                print(f"\n(错误处理示例)服务端返回: {bad['error']}")
+            bad_result = await session.call_tool(
+                "get_company_tracking", {"company": "不存在的公司名xx"}
+            )
+            bad = parse(bad_result)
+            failed, error, retry_after = error_info(bad_result, bad)
+            if failed:
+                suffix = f"，{retry_after} 秒后重试" if retry_after is not None else ""
+                print(f"\n(错误处理示例)服务端返回: {error or '工具调用失败'}{suffix}")
 
 
 if __name__ == "__main__":

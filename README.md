@@ -1,7 +1,7 @@
 # ADAMAS MCP — 接入仓库
 
-> 把 ADAMAS 投研能力接进你自己的 AI:产业景气度、产业链传导图谱、公司跟踪、模型选股、
-> 每日信息流、深度研究与纪要生成 —— **一个 MCP 端点,13 个工具**。
+> 把 ADAMAS 投研能力接进你自己的 AI:产业景气度、产业链传导图谱、公司跟踪、全球宏观、
+> 模型选股、每日信息流、深度研究与纪要生成 —— **一个 MCP 端点,Standard 档 15 个工具**。
 
 - **端点**:`https://www.adamas-research.com/mcp`(remote MCP,streamable HTTP,无需安装任何服务)
 - **认证**:`Authorization: Bearer <your-api-key>` —— API key 向 ADAMAS 团队申请
@@ -9,6 +9,9 @@
 
 > 本仓库只包含接入材料(文档 / Skill / 示例),服务本体由 ADAMAS 托管运行。
 > 没有 API key 时以下配置可以先填好,拿到 key 即刻生效。
+>
+> 当前服务未实现 MCP OAuth discovery / 自动授权,需手工配置端点和 Bearer key。
+> 不能为 remote MCP 设置自定义 HTTP header 的客户端暂不能直接接入。
 
 ## 30 秒接入
 
@@ -40,42 +43,69 @@ claude  # 会话内执行:
 #   /plugin install adamas-research-report@adamas
 ```
 
-### Claude Desktop / Cursor / Codex 等(通用 JSON 配置)
+### Codex
+
+在 `~/.codex/config.toml`(或已信任项目的 `.codex/config.toml`)中加入:
+
+```toml
+[mcp_servers.adamas]
+url = "https://www.adamas-research.com/mcp"
+bearer_token_env_var = "ADAMAS_API_KEY"
+default_tools_approval_mode = "writes"
+```
+
+用密码管理器或 shell profile 向启动 Codex 的进程注入 `ADAMAS_API_KEY`,
+不要把 key 写进 `config.toml`。重启 Codex 后可用 `/mcp` 查看连接与工具。
+
+### Cursor
+
+在 Cursor 的 `~/.cursor/mcp.json` 中加入:
 
 ```json
 {
   "mcpServers": {
     "adamas": {
-      "type": "http",
       "url": "https://www.adamas-research.com/mcp",
-      "headers": { "Authorization": "Bearer <your-api-key>" }
+      "headers": { "Authorization": "Bearer ${env:ADAMAS_API_KEY}" }
     }
   }
 }
 ```
+
+向启动 Cursor 的进程注入 `ADAMAS_API_KEY` 后重启 Cursor。密钥不写进
+`mcp.json`;Cursor 会按 `url` 自动使用 remote HTTP transport。
+
+### Claude Desktop
+
+ADAMAS 当前的自定义 Bearer 认证不能直接配置进 Claude Desktop 的 remote
+connector。Claude Desktop 的 remote MCP 需从 Settings → Connectors 添加,
+当前界面提供免认证或 OAuth 流程;
+`claude_desktop_config.json` 只配置本地 server,不能用来连接这种带自定义
+Bearer header 的 remote server。请改用 Claude Code、Cursor、Codex 或 WorkBuddy。
 
 ### 自建 agent(Python)
 
 见 [examples/quickstart.py](examples/quickstart.py):
 
 ```bash
-pip install mcp
+python -m pip install "mcp>=1.28.1,<2"
 ADAMAS_API_KEY=<your-api-key> python examples/quickstart.py
 ```
 
-## 能做什么(13 个工具速览)
+## 能做什么(Standard 档 15 个工具速览)
 
 | 能力域 | 工具 |
 |---|---|
 | 资产解析 | `search_assets`(名称/代码 → 标准信息+行业分类) |
 | 产业 | `get_industry_scores`(景气度+六维趋势)`get_industry_graph`(产业链传导图谱)`get_industry_report`(报告 PDF) |
-| 公司 | `get_company_tracking`(跟踪报告全文,含历史期) |
-| 选股 | `get_model_picks`(最新一期模型排名)`submit_stock_screen`(产业链选股,异步) |
+| 公司 | `check_company_coverage`(批量查覆盖)`get_company_tracking`(跟踪报告全文,含历史期) |
+| 全球宏观 | `get_global_macro`(国别九维度报告,含历史期) |
+| 选股 | `get_model_picks`(最新一期已发布模型排名)`submit_stock_screen`(产业链量化选股,异步) |
 | 信息流 | `get_info_feed`(当日要闻打分摘要) |
 | 研究成稿 | `submit_deep_research`(深度研究问答,异步)`submit_notes_report`(深度纪要+PDF,异步)`get_strategy_reports`(沙盘推演报告) |
 | 入口 | `list_capabilities`(能力地图,每个会话第一站)`get_research_task`(异步任务轮询) |
 
-典型玩法:让你的 AI 写行业跟踪简报、盘前扫当日高分要闻、推演产业链传导、
+典型玩法:让你的 AI 写行业跟踪简报、盘前扫当日高分要闻、比较不同经济体的宏观九维度、推演产业链传导、
 把研究问题外包给 ADAMAS 研究引擎、一键产出深度纪要 PDF。方法论详见 Skill。
 
 ## 安装 Skill(可选,强烈推荐)
