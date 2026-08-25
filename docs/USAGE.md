@@ -13,7 +13,7 @@ remote MCP endpoint 与 `Authorization: Bearer` 请求头的客户端
 > 需手工配置端点和 Bearer key。如果你的客户端版本不能为 remote MCP
 > 连接设置自定义 HTTP header,就不能直接接入当前服务。
 
-它对外提供七类投研能力:
+它对外提供八类投研能力:
 
 | 能力域 | 说明 |
 |---|---|
@@ -21,6 +21,7 @@ remote MCP endpoint 与 `Authorization: Bearer` 请求头的客户端
 | 产业报告 | 边际跟踪报告与完整深度报告的 PDF 下载(成稿报告直接给最终用户) |
 | 产业关联图谱 | 约 190 个产业节点 + 产业链传导关系边(方向/强度/时滞),支持传导链推演 |
 | 公司跟踪 | 约 2400 家公司的跟踪报告全文(markdown,含历史期)与历史目录 |
+| 全球宏观 | 分经济体的九维度报告覆盖、最新正文与历史期对比 |
 | 每日信息流 | 多源聚合后二次加工的当日市场要闻打分摘要(晨会/盘前场景) |
 | 模型与产业链选股 | 最新模型排名(秒级只读)与产业链量化选股任务(异步) |
 | 深度研究与纪要 | 深度研究问答、深度纪要报告生成(异步任务) |
@@ -28,7 +29,7 @@ remote MCP endpoint 与 `Authorization: Bearer` 请求头的客户端
 - **端点**:`https://www.adamas-research.com/mcp`
 - **传输**:MCP streamable HTTP(无状态,支持断线重连后重新调用)
 - **认证**:每个请求携带 HTTP 头 `Authorization: Bearer <your-api-key>`,API key 向 ADAMAS 申请获取(key 明文只在发放时出现一次,请妥善保管)
-- **内容**:本公开主文档对应 Standard 档,**14 个工具**(11 个 data 类 + 3 个 research 提交工具)+ 2 个预置 prompts + 1 个 WorkBuddy/OpenClaw Skill 包。Standard 包含模型选股排名与产业链量化选股两个结果型入口。本公开文档只描述 Standard 契约。
+- **内容**:本公开主文档对应 Standard 档,**15 个工具**(12 个 data 类 + 3 个 research 提交工具)+ 2 个预置 prompts + 1 个 WorkBuddy/OpenClaw Skill 包。Standard 包含模型选股排名、产业链量化选股与全球宏观入口。本公开文档只描述 Standard 契约。
 
 两类工具的契约有本质区别,集成前务必理解(详见第 3、6 节):
 
@@ -160,14 +161,16 @@ asyncio.run(main())
 2. **标的名可先解析**:用 `search_assets` 把公司名/代码解析成标准信息(行业分类/市场风格属性);
 3. **所有数值以返回中的 `as_of` 为准**;
 4. **超限时按 `retry_after_seconds` 退避**,不要密集重试。
+5. **全球宏观先无参调用** `get_global_macro()`:从返回的覆盖全景取
+   `country_key`、九维度及最新报告日期,再按需取正文。
 
 ## 3. 工具参考
 
 通用约定:
 
 - 所有工具返回 JSON dict。业务层错误(参数错误、未找到、配额超限等)会返回 `{"error": "<原因>"}` 并把 MCP `CallToolResult.isError` 标为 `true`;可退避的错误额外带 `retry_after_seconds` 字段。它们不是 HTTP/传输异常,SDK 通常仍会返回 `CallToolResult`,因此你的 agent 应同时处理 `isError` 和 JSON 中的 `error` 键;
-- 数据类返回带 `meta` 字段(口径说明,观点相关的还含 `disclaimer`),数值带各自的 `as_of`(数据截止日);
-- 参数中的日期一律 `YYYY-MM-DD`;返回中的 `as_of` / 序列日期也是 `YYYY-MM-DD`,仅产业跟踪的 `summary_as_of` 与 `score_history[].date` 为带时区的完整时间戳(如 `2026-07-20 16:06:22+00:00`)。
+- 数据类返回带 `meta` 字段(口径说明,观点相关的还含 `disclaimer`),数值带各自的 `as_of`(数据截止日);全球宏观报告以 `latest_date` / `report_date` 标日期;
+- 参数中的日期一律 `YYYY-MM-DD`;返回中的 `as_of` / `report_date` / 序列日期也是 `YYYY-MM-DD`,仅产业跟踪的 `summary_as_of` 与 `score_history[].date` 为带时区的完整时间戳(如 `2026-07-20 16:06:22+00:00`)。
 
 ### 3.1 data 类(客观数据与已发布结果,秒级返回)
 
@@ -461,6 +464,118 @@ components:{market, style, macro}}`,rank 越小越靠前,`percentile` 为 0–10
 
 ---
 
+#### `get_global_macro` — 全球宏观国别九维度报告
+
+**用途**:先查有报告的经济体与九维度覆盖,再按经济体、维度和日期
+读报告正文。只读、秒级返回;报告含模型生成的研究观点,
+**引用时必须原文保留 `meta.disclaimer`**。
+
+**参数**:
+
+| 名称 | 类型 | 必填 | 默认 | 说明 |
+|---|---|---|---|---|
+| `country` | string | 否 | 不传返覆盖全景 | 经济体主键;必须取自无参返回的 `countries[].country_key` 或 `regions[].country_key` |
+| `dimension` | string | 否 | 不传返该经济体的九维度覆盖 | 维度 key;必须与 `country` 一起传,取自 `dimensions[].key` 或 `cells[].key` |
+| `report_date` | string | 否 | 最新一期 | 历史报告日期(`YYYY-MM-DD`);必须同时传 `country` + `dimension`,且应从最新正文返回的 `dates` 中选 |
+
+**四种调用方式**:
+
+| 调用 | 返回什么 |
+|---|---|
+| `get_global_macro()` | 覆盖全景:`countries[]`、`regions[]`、`dimensions[]`、`score_ready` |
+| `get_global_macro(country="China")` | 中国的九个 `cells[]`,每格标出有无报告、最新日期和历史期数 |
+| `get_global_macro(country="China", dimension="industry")` | 中国“主导产业”最新一期正文 + 全部可选历史日期 |
+| 再加 `report_date="2026-08-04"` | 指定历史期正文;日期不在 `dates` 中时返回 error |
+
+九个维度 key 是:`industry`(主导产业)、`consumption`(消费与服务业)、
+`trade`(进出口)、`property`(建筑地产)、`inflation`(通胀)、`fiscal`(财政政策)、
+`monetary`(货币政策)、`geopolitics`(外交&地缘)、`government`(政府动态)。
+
+**覆盖全景返回要点**:
+
+- `countries[]` 每条含 `country_key`、`country_name`、`dimensions`(0–9)、
+  `latest_date`、`score`;
+- `regions[]` 与上述结构相同,但是**非国家地区**。`China-Taiwan` 只会出现在
+  `regions`,表示中国台湾地区;不得把它写成国家、并入 `countries` 或计入
+  “覆盖国家数”;
+- `dimensions[]` 含 `{key, label, order}`,是后续调用的唯一维度口径;
+- `score_ready` 表示宏观周期打分模型是否已上线。当它为 `false` 时,
+  `countries[].score` / `regions[].score` 为 `null`;集成方**不得臆造分数、推断排名或
+  用颜色暗示尚不存在的周期信号**。
+
+**经济体覆盖返回要点**:`country_key`、`country_name`、`cells[]`;
+九个格子恒定返回,每格为 `{key, label, order, has_report, report_date,
+periods}`。没有报告的格子也会保留,此时 `has_report=false`、`report_date=""`、
+`periods=0`;这是正常空态,不是错误。
+
+**报告正文返回要点**:`country_key`、`country_name`、`dimension`、`label`、
+`report_date`、`content`(markdown 正文)、`dates[]`(该维度全部历史期,由新到旧)。
+单篇正文超过输出上限时 `content` 会被截断,此时
+`meta.content_truncated=true` 并给出 `meta.content_chars_original`;不得把截断内容
+当作完整报告。
+三种返回都带 `meta.note` 和 `meta.disclaimer`;返回的报告数据畸形或上游暂时不可达时,
+工具会返回结构化 `error`,不会把不完整正文伪装成成功结果。
+
+**示例**:
+
+```jsonc
+// 1) 调用:get_global_macro()
+// 返回(摘要,日期为示意):
+{
+  "countries": [
+    {"country_key": "China", "country_name": "中国", "dimensions": 9,
+     "latest_date": "2026-08-04", "score": null}
+  ],
+  "regions": [
+    {"country_key": "China-Taiwan", "country_name": "中国台湾地区", "dimensions": 9,
+     "latest_date": "2026-08-04", "score": null}
+  ],
+  "dimensions": [
+    {"key": "industry", "label": "主导产业", "order": 1},
+    {"key": "consumption", "label": "消费与服务业", "order": 2}
+    // 此处仅节选 2 项；真实成功响应固定返回完整 9 项。
+  ],
+  "score_ready": false,
+  "meta": {
+    "note": "…",
+    "disclaimer": "本内容由 ADAMAS 模型生成,仅供研究参考,不构成任何投资建议;据此操作风险自担。引用时须保留本声明。"
+  }
+}
+```
+
+```jsonc
+// 2) 调用:get_global_macro(country="China")
+{
+  "country_key": "China",
+  "country_name": "中国",
+  "cells": [
+    {"key": "industry", "label": "主导产业", "order": 1,
+     "has_report": true, "report_date": "2026-08-04", "periods": 2},
+    {"key": "trade", "label": "进出口", "order": 3,
+     "has_report": false, "report_date": "", "periods": 0}
+    // 此处仅节选 2 格；真实成功响应固定返回完整 9 格。
+  ],
+  "meta": {"note": "…", "disclaimer": "…须原文保留…"}
+}
+```
+
+```jsonc
+// 3) 调用:get_global_macro(
+//      country="China", dimension="industry", report_date="2026-07-04")
+{
+  "country_key": "China",
+  "country_name": "中国",
+  "dimension": "industry",
+  "label": "主导产业",
+  "report_date": "2026-07-04",
+  "content": "# 中国·主导产业\n\n…(markdown 正文)",
+  "dates": ["2026-08-04", "2026-07-04"],
+  "meta": {"note": "…", "disclaimer": "…须原文保留…"}
+}
+```
+
+---
+
 ### 3.2 research 类(含模型观点,异步任务对)
 
 research 类与 data 类的契约区别:**结果含模型生成的分析观点**;走独立的日额度(默认每 key 每日 20 次提交)与全局并发闸;均为异步——提交秒回 `task_id`,用 `get_research_task` 轮询;结果强制附 `disclaimer`,**引用必须原文保留**。
@@ -640,7 +755,7 @@ research 三个提交工具(`submit_deep_research` / `submit_stock_screen` /
 - **API key 必须绑定账号**才能调用 research 类工具。未绑定时返回
   `error: "该 API key 未绑定用户,无法使用研究类工具;请联系 ADAMAS 为 key 绑定账号"`
   ——data 类工具不受此限制,可照常使用;
-- **`submit_deep_research` 选 `mode="pro"` 时用量按 2 倍计**(与网页端 pro 档一致),
+- **`submit_deep_research` 选 `mode="pro"` 时用量按 2 倍计**(与网页端知识库的 Pro 单次问答模式一致，不是订阅档位),
   其余档位(`auto`/`flash`/`plus`)按 1 倍;
 - **任务失败会自动退回本次用量**:上游报错、超时判死、你主动断开都会退,
   不必为失败的任务重复付出额度。**成功产出的任务不退**——包括你觉得结果不理想的情况;
@@ -664,10 +779,13 @@ research 三个提交工具(`submit_deep_research` / `submit_stock_screen` /
 
 集成方必须遵守以下约定:
 
-1. **一切数值以返回中的 `as_of` 为准**。行情为每交易日盘后(约 16–17 点)人工导入,存在 T+0 晚间前的滞后:交易日当天下午调用可能拿到的仍是上一交易日数据——这不是故障。判断时效请对照 `list_capabilities().freshness`,并在你的产出物中把 `as_of` 标注给最终读者(如「ADAMAS 数据,截至 2026-07-23」)。
-2. **免责声明必须原文保留**:research 类结果及含模型观点的 data 类返回(`get_model_picks` / `get_industry_scores` / `get_company_tracking`)均带 `disclaimer` 字段。你的 agent 在引用这些内容产出报告/回答时,**必须一字不改地保留该声明**;
+1. **一切数值以返回中的 `as_of` 为准**。行情为每交易日盘后(约 16–17 点)人工导入,存在 T+0 晚间前的滞后:交易日当天下午调用可能拿到的仍是上一交易日数据——这不是故障。判断时效请对照 `list_capabilities().freshness`,并在你的产出物中把 `as_of` 标注给最终读者(如「ADAMAS 数据,截至 2026-07-23」)。全球宏观报告单独以 `latest_date` / `report_date` 为准,成文时同样必须标注。
+2. **免责声明必须原文保留**:research 类结果及含模型观点的 data 类返回(`get_model_picks` / `get_industry_scores` / `get_company_tracking` / `get_global_macro`)均带 `disclaimer` 字段(全球宏观放在 `meta.disclaimer`)。你的 agent 在引用这些内容产出报告/回答时,**必须一字不改地保留该声明**;
 3. **输出内容不构成投资建议**:所有数据与观点仅供研究参考,不构成对任何人的投资建议,据此操作风险自担。将本服务能力集成到面向终端用户的产品时,合规责任由集成方承担;
 4. 建议在成文时区分三种内容:①ADAMAS 客观数据(标 `as_of`)②ADAMAS 模型观点(深度研究/选股/景气度打分,注明来源)③你自己的推断与综合。
+5. **全球宏观地区与打分口径不得改写**:`China-Taiwan` 只是
+   `regions` 中的中国台湾地区,不计入国家数;当 `score_ready=false` 时,
+   `score=null` 表示周期打分尚未上线,不得臆造分数或排名。
 
 ## 7. 预置 Prompts 与 WorkBuddy Skill
 
@@ -685,7 +803,7 @@ research 三个提交工具(`submit_deep_research` / `submit_stock_screen` /
 ### 7.2 WorkBuddy / OpenClaw Skill 包
 
 Skill 包与本文档一起发布在**公开接入仓库** <https://github.com/felixhjh-2/adamas-mcp-connect>
-(路径 `plugins/adamas-research-report/skills/adamas-research-report/`),内容为「ADAMAS 投研报告」方法论:先看地图再取数、代码先解析、数据与观点分开取分开写、限流退避、成文规范(as_of 标注、三类内容区分、disclaimer 原文保留、六维趋势符号含义)以及四个常用剧本(行业跟踪简报/个股解读/深度专题报告/晨会纪要一页)。
+(路径 `plugins/adamas-research-report/skills/adamas-research-report/`),内容为「ADAMAS 投研报告」方法论:先看地图再取数、代码先解析、全球宏观先拉覆盖全景再读正文、数据与观点分开取分开写、限流退避、成文规范(日期标注、三类内容区分、disclaimer 原文保留、六维趋势符号含义)以及六个常用剧本(行业跟踪简报/个股解读/全球宏观对比/产业链量化选股/深度专题报告/晨会纪要一页)。
 
 安装方式:
 
@@ -731,6 +849,15 @@ Skill 与 MCP prompts 方法论同源:装了 Skill 的 agent 会主动按 ADAMAS
 
 **Q:交易日下午调用,行情相关 `as_of` 还是昨天?**
 正常现象:行情为盘后 16–17 点人工导入(见第 6 节),当天数据在晚间前可能尚未就绪。以 `freshness` / `as_of` 为准。
+
+**Q:`get_global_macro` 里 `score_ready=false`、`score=null`,是不是分数为 0?**
+不是。这表示宏观周期打分模型尚未上线,不得当作 0 分,也不得自行生成
+分数、排名或颜色等级。直接依报告正文做定性分析,并标注 `report_date`。
+
+**Q:为什么 `China-Taiwan` 不在 `countries` 里?**
+它代表中国台湾地区,按契约只在 `regions` 中返回,不计入覆盖国家数。
+需要读它的报告时,仍可把返回的 `country_key` 值 `China-Taiwan` 传给
+`get_global_macro(country=...)`;对外展示应使用返回的 `country_name`。
 
 ---
 

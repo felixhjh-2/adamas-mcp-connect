@@ -1,6 +1,6 @@
 ---
 name: adamas-research-report
-description: 用 ADAMAS 投研数据写专业研究报告/晨会纪要/行业跟踪。当用户要写行业分析、个股解读、投研报告,且已接入 ADAMAS MCP 连接器时使用。
+description: 用 ADAMAS 投研数据写专业研究报告/晨会纪要/行业跟踪/全球宏观对比。当用户要写行业分析、个股解读、宏观分析或投研报告,且已接入 ADAMAS MCP 连接器时使用。
 ---
 
 # ADAMAS 投研报告技能
@@ -19,12 +19,20 @@ description: 用 ADAMAS 投研数据写专业研究报告/晨会纪要/行业跟
    **没有**「新能源」「医药生物」「电力设备」这类申万/中信一级行业 —— 它们要拆成
    「光伏」「风电」「储能」「锂电池」「固态电池」这样的细分名分别查。
    万一没命中,error 里的 `available_industries` 会给全名单,照着改一次就行。
+2.6 **全球宏观先拉全景,再读正文**:先无参调 `get_global_macro()`,
+   从 `countries` / `regions` 取官方 `country_key`,再传 `country`。某经济体
+   的九维度覆盖用 `get_global_macro(country=X)`,报告正文用
+   `get_global_macro(country=X, dimension=Y)`;要做跨期对比,先从最新正文返回的
+   `dates` 选日期,再加 `report_date`。`China-Taiwan` 只是 `regions` 中的
+   中国台湾地区,不得写成国家或计入国家数。当 `score_ready=false` 时,
+   不得臆造、推断、排名或用颜色代替尚未上线的宏观分数。
 3. **数据与观点分开取、分开写**:
    - 客观数据、已发布量化结果与成稿报告:`get_model_picks`(最新模型选股排名)、
      `get_industry_scores`(景气度)、
      `check_company_coverage`(批量查哪些公司有跟踪报告)、
      `get_company_tracking`(公司跟踪全文,可传 report_date 取历史期做跨期对比)、
      `get_industry_graph`(产业链传导图谱)、`get_info_feed`(当日要闻打分摘要)、
+     `get_global_macro`(全球宏观九维度报告,可传 report_date 取历史期)、
      `get_industry_report`/`get_strategy_reports`(成稿 PDF 链接,直接交付给读者);
    - **拿到一批公司(股票池/名单)时,先 `check_company_coverage` 一次问清覆盖情况,
      再对命中的用 `get_company_tracking` 取全文** —— 不要对后者循环单查:
@@ -64,6 +72,14 @@ description: 用 ADAMAS 投研数据写专业研究报告/晨会纪要/行业跟
 → 需要跨期对比时传 `report_date` 取历史期 → 可选用
 `get_model_picks(top_n=100)` 确认该标的是否进入本期前 100(未出现只表示不在返回区间)
 → 成文:基本面跟踪要点+跨期变化+已发布模型排名参考。
+
+**全球宏观对比**:`get_global_macro()` 拿覆盖全景、九维度字典与
+`score_ready` → 对目标经济体分别调 `get_global_macro(country=X)` 确认哪些维度
+有报告 → 只对 `has_report=true` 的格子调
+`get_global_macro(country=X, dimension=Y)` 取最新正文 → 需要跨期时从 `dates`
+选取历史日期加 `report_date` 重查 → 成文:按同一维度比较,每段标明
+`report_date`,原文保留 `disclaimer`;若 `score_ready=false`,只写报告内容,
+不生成任何“周期分数”或经济体排名。
 
 **产业链量化选股**:`submit_stock_screen(industry_chain=X)` → 按返回的
 `next_step` 用 `get_research_task` 轮询(建议间隔≥60秒) → 完成后对结果公司名单先调

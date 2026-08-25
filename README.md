@@ -1,7 +1,7 @@
 # ADAMAS MCP — 接入仓库
 
-> 把 ADAMAS 投研能力接进你自己的 AI:产业景气度、产业链传导图谱、公司跟踪、模型选股、
-> 每日信息流、深度研究与纪要生成 —— **一个 MCP 端点,Standard 档 14 个工具**。
+> 把 ADAMAS 投研能力接进你自己的 AI:产业景气度、产业链传导图谱、公司跟踪、全球宏观、
+> 模型选股、每日信息流、深度研究与纪要生成 —— **一个 MCP 端点,Standard 档 15 个工具**。
 
 - **端点**:`https://www.adamas-research.com/mcp`(remote MCP,streamable HTTP,无需安装任何服务)
 - **认证**:`Authorization: Bearer <your-api-key>` —— API key 向 ADAMAS 团队申请
@@ -92,19 +92,20 @@ python -m pip install "mcp>=1.28.1,<2"
 ADAMAS_API_KEY=<your-api-key> python examples/quickstart.py
 ```
 
-## 能做什么(Standard 档 14 个工具速览)
+## 能做什么(Standard 档 15 个工具速览)
 
 | 能力域 | 工具 |
 |---|---|
 | 资产解析 | `search_assets`(名称/代码 → 标准信息+行业分类) |
 | 产业 | `get_industry_scores`(景气度+六维趋势)`get_industry_graph`(产业链传导图谱)`get_industry_report`(报告 PDF) |
 | 公司 | `check_company_coverage`(批量查覆盖)`get_company_tracking`(跟踪报告全文,含历史期) |
+| 全球宏观 | `get_global_macro`(国别九维度报告,含历史期) |
 | 选股 | `get_model_picks`(最新一期已发布模型排名)`submit_stock_screen`(产业链量化选股,异步) |
 | 信息流 | `get_info_feed`(当日要闻打分摘要) |
 | 研究成稿 | `submit_deep_research`(深度研究问答,异步)`submit_notes_report`(深度纪要+PDF,异步)`get_strategy_reports`(沙盘推演报告) |
 | 入口 | `list_capabilities`(能力地图,每个会话第一站)`get_research_task`(异步任务轮询) |
 
-典型玩法:让你的 AI 写行业跟踪简报、盘前扫当日高分要闻、推演产业链传导、
+典型玩法:让你的 AI 写行业跟踪简报、盘前扫当日高分要闻、比较不同经济体的宏观九维度、推演产业链传导、
 把研究问题外包给 ADAMAS 研究引擎、一键产出深度纪要 PDF。方法论详见 Skill。
 
 ## 安装 Skill(可选,强烈推荐)
