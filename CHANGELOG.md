@@ -1,12 +1,20 @@
 # CHANGELOG
 
+## 2026-08-26
+
+- `get_global_macro` 改为每个经济体×维度只提供最新报告;
+  停止按日期选择旧版，移除期数与日期目录。为避免旧客户端在滚动升级时
+  schema 失配，日期参数仅暂作当前版校验兼容，新接入必须省略。
+- 公司跟踪的历史报告契约保持不变。
+- Claude Code 插件版本升级到 2.3.1，确保客户端刷新 latest-only Skill。
+
 ## 2026-08-25
 
 Standard 公开契约同步为 15 个工具:
 
 - 新增只读 `get_global_macro`,可先拉取经济体与九维度覆盖全景,
-  再读某个经济体的最新或历史报告正文;
-- 公开文档与 Skill 补齐了宏观使用顺序、九维度口径、日期选择及
+  再读某个经济体的报告正文;
+- 公开文档与 Skill 补齐了宏观使用顺序、九维度口径及
   `score_ready=false` 时不得臆造分数的约束;
 - 合规口径明确 `China-Taiwan` 只在 `regions` 中出现,不计入国家数;
 - 新增 Kimi Code 接入说明:通过 `~/.kimi-code/mcp.json` 配置 remote HTTP MCP,
