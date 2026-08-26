@@ -22,17 +22,18 @@ description: 用 ADAMAS 投研数据写专业研究报告/晨会纪要/行业跟
 2.6 **全球宏观先拉全景,再读正文**:先无参调 `get_global_macro()`,
    从 `countries` / `regions` 取官方 `country_key`,再传 `country`。某经济体
    的九维度覆盖用 `get_global_macro(country=X)`,报告正文用
-   `get_global_macro(country=X, dimension=Y)`;要做跨期对比,先从最新正文返回的
-   `dates` 选日期,再加 `report_date`。`China-Taiwan` 只是 `regions` 中的
+   `get_global_macro(country=X, dimension=Y)`。每个经济体×维度只提供最新报告,
+   不要请求旧版本或生成跨期目录。`China-Taiwan` 只是 `regions` 中的
    中国台湾地区,不得写成国家或计入国家数。当 `score_ready=false` 时,
    不得臆造、推断、排名或用颜色代替尚未上线的宏观分数。
 3. **数据与观点分开取、分开写**:
-   - 客观数据、已发布量化结果与成稿报告:`get_model_picks`(最新模型选股排名)、
+   - 客观数据、已发布量化结果与成稿报告:`get_model_picks`(最新已发布的量化选股
+     Top N，排名对象是股票/资产，不是不同模型)、
      `get_industry_scores`(景气度)、
      `check_company_coverage`(批量查哪些公司有跟踪报告)、
      `get_company_tracking`(公司跟踪全文,可传 report_date 取历史期做跨期对比)、
      `get_industry_graph`(产业链传导图谱)、`get_info_feed`(当日要闻打分摘要)、
-     `get_global_macro`(全球宏观九维度报告,可传 report_date 取历史期)、
+     `get_global_macro`(全球宏观九维度最新报告)、
      `get_industry_report`/`get_strategy_reports`(成稿 PDF 链接,直接交付给读者);
    - **拿到一批公司(股票池/名单)时,先 `check_company_coverage` 一次问清覆盖情况,
      再对命中的用 `get_company_tracking` 取全文** —— 不要对后者循环单查:
@@ -58,10 +59,10 @@ description: 用 ADAMAS 投研数据写专业研究报告/晨会纪要/行业跟
 ## 常用剧本
 
 **行业跟踪简报**:`get_industry_scores(industry=X, include_history=true)` →
-`get_model_picks(top_n=30)` 取已发布排名,再按业务相关性筛代表标的 →
+`get_model_picks(top_n=30)` 取最新已发布的量化选股 Top N,再按业务相关性筛代表标的 →
 可选 `get_industry_report` 取成稿 PDF → 对公司名单先用 `check_company_coverage`
 批量确认覆盖,再对命中者取 `get_company_tracking` →
-成文:景气度结论+趋势拆解(六维符号)+模型偏好+历史快照+代表公司基本面跟踪。
+成文:景气度结论+趋势拆解(六维符号)+量化选股结果+历史快照+代表公司基本面跟踪。
 
 > `get_model_picks.asset_class_l1` 只接受资产表 L1 分类(如「有色金属」),
 > 与 `industry_catalog` 的 ADAMAS 细分产业名不是同一套口径。只有已通过
@@ -71,14 +72,15 @@ description: 用 ADAMAS 投研数据写专业研究报告/晨会纪要/行业跟
 **个股解读**:`search_assets`(解析 asset_code)→ `get_company_tracking(公司名)`
 → 需要跨期对比时传 `report_date` 取历史期 → 可选用
 `get_model_picks(top_n=100)` 确认该标的是否进入本期前 100(未出现只表示不在返回区间)
-→ 成文:基本面跟踪要点+跨期变化+已发布模型排名参考。
+→ 成文:基本面跟踪要点+跨期变化+最新量化选股结果参考。
 
 **全球宏观对比**:`get_global_macro()` 拿覆盖全景、九维度字典与
 `score_ready` → 对目标经济体分别调 `get_global_macro(country=X)` 确认哪些维度
 有报告 → 只对 `has_report=true` 的格子调
-`get_global_macro(country=X, dimension=Y)` 取最新正文 → 需要跨期时从 `dates`
-选取历史日期加 `report_date` 重查 → 成文:按同一维度比较,每段标明
-`report_date`,原文保留 `disclaimer`;若 `score_ready=false`,只写报告内容,
+`get_global_macro(country=X, dimension=Y)` 取最新正文 → 成文:按同一维度比较各经济体的
+最新报告,每段标明返回的最新 `report_date`,原文保留 `disclaimer`;
+全球宏观不做历史版本对比,公司跟踪仍可用 `history` / `report_date` 跨期对比;
+若 `score_ready=false`,只写报告内容,
 不生成任何“周期分数”或经济体排名。
 
 **产业链量化选股**:`submit_stock_screen(industry_chain=X)` → 按返回的
@@ -93,8 +95,8 @@ data 工具取相关行业/标的客观数据 → 轮询拿到研究结论 → �
 **晨会纪要一页**:`get_industry_scores(include_summary=false)`(全量打分+六维趋势,
 **不带摘要全文**)→ 挑出分数最高/变动明显的 3-5 个 → 对这几个
 `get_industry_scores(industry=X)` 单查拿摘要,再用 `get_info_feed` 补当日要闻
-→ `get_model_picks(top_n=10)` 补最新模型偏好 →
-一页式:今日景气度看点+产业变化+模型偏好+市场要闻+风险提示+免责。
+→ `get_model_picks(top_n=10)` 补最新已发布的量化选股 Top 10 →
+一页式:今日景气度看点+产业变化+量化选股结果+市场要闻+风险提示+免责。
 
 > 不要用不带参数的 `get_industry_scores()` 做这一步:它会把全部约 190 篇跟踪摘要
 > 全文一次灌进上下文(比上面那种大 5 倍),而你只需要其中 3-5 篇。

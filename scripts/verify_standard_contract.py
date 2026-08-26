@@ -99,6 +99,7 @@ def main() -> None:
     ).read_text(encoding="utf-8")
     quickstart = (ROOT / "examples" / "quickstart.py").read_text(encoding="utf-8")
     workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    changelog = (ROOT / "CHANGELOG.md").read_text(encoding="utf-8")
 
     heading_rows = re.findall(r"^#### `([^`]+)`", usage, re.MULTILINE)
     headings = set(heading_rows)
@@ -158,6 +159,14 @@ def main() -> None:
         skill.index("check_company_coverage") < skill.index("get_company_tracking"),
         "Skill 未保持 coverage-first 顺序",
     )
+    require("最新已发布的量化选股" in skill, "Skill 缺量化选股明确口径")
+    for stale_model_wording in (
+        "最新模型选股排名",
+        "取已发布排名",
+        "已发布模型排名参考",
+        "补最新模型偏好",
+    ):
+        require(stale_model_wording not in skill, f"Skill 残留模糊选股文案: {stale_model_wording}")
     for document in (readme, usage):
         for marker in ("自定义 Bearer 认证不能直接配置", "~/.codex/config.toml"):
             require(marker in document, f"公开接入口径缺 {marker}")
@@ -215,14 +224,40 @@ def main() -> None:
             "China-Taiwan",
             "regions",
             "score_ready=false",
-            "report_date",
             "disclaimer",
         ):
             require(marker in document, f"全球宏观公开契约缺 {marker}")
+    macro_usage = usage.split("#### `get_global_macro`", 1)[1].split("\n---", 1)[0]
+    require("每个经济体×维度只提供最新版" in macro_usage,
+            "全球宏观文档缺最新版唯一口径")
+    require("当前工具 schema 暂保留 `report_date`" in macro_usage,
+            "全球宏观文档缺滚动兼容参数说明")
+    require("每个经济体×维度只提供最新报告" in skill,
+            "Skill 缺全球宏观最新版唯一口径")
+    for removed in (
+        "| `report_date` |",
+        "`dates`",
+        "dates[]",
+        "`periods`",
+        "periods}",
+        "历史期",
+    ):
+        require(removed not in macro_usage, f"全球宏观仍暴露历史契约: {removed}")
+    macro_skill_method = skill.split(
+        "2.6 **全球宏观先拉全景,再读正文**", 1
+    )[1].split("3. **数据与观点分开取、分开写**", 1)[0]
+    macro_skill_playbook = skill.split("**全球宏观对比**", 1)[1].split(
+        "**产业链量化选股**", 1
+    )[0]
+    for removed in ("`dates`", "`periods`", "report_date=", "历史日期"):
+        require(
+            removed not in macro_skill_method and removed not in macro_skill_playbook,
+            f"Skill 全球宏观仍引导历史调用: {removed}",
+        )
     for marker in (
         'get_global_macro(country="China")',
         'dimension="industry"',
-        'report_date="2026-08-04"',
+        '"report_date": "2026-08-04"',
         '"country_name": "中国台湾地区"',
         "countries[].score",
         "regions[].score",
@@ -275,7 +310,8 @@ def main() -> None:
             encoding="utf-8"
         )
     )
-    require(plugin["version"] == "2.3.0", "插件版本未升级到 2.3.0")
+    require(plugin["version"] == "2.3.1", "插件版本未升级到 2.3.1")
+    require("插件版本升级到 2.3.1" in changelog, "CHANGELOG 缺插件 2.3.1 升级记录")
     for manifest_text in (plugin["description"], marketplace["plugins"][0]["description"]):
         require("15" in manifest_text, "插件清单缺 Standard 15 工具口径")
         require("全球宏观" in manifest_text, "插件清单缺全球宏观能力")
