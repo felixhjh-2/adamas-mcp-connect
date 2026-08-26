@@ -21,15 +21,15 @@ remote MCP endpoint 与 `Authorization: Bearer` 请求头的客户端
 | 产业报告 | 边际跟踪报告与完整深度报告的 PDF 下载(成稿报告直接给最终用户) |
 | 产业关联图谱 | 约 190 个产业节点 + 产业链传导关系边(方向/强度/时滞),支持传导链推演 |
 | 公司跟踪 | 约 2400 家公司的跟踪报告全文(markdown,含历史期)与历史目录 |
-| 全球宏观 | 分经济体的九维度报告覆盖、最新正文与历史期对比 |
+| 全球宏观 | 分经济体的九维度报告覆盖与最新正文 |
 | 每日信息流 | 多源聚合后二次加工的当日市场要闻打分摘要(晨会/盘前场景) |
-| 模型与产业链选股 | 最新模型排名(秒级只读)与产业链量化选股任务(异步) |
+| 模型与产业链选股 | 最新已发布的量化选股 Top N(排名股票/资产,秒级只读)与产业链量化选股任务(异步) |
 | 深度研究与纪要 | 深度研究问答、深度纪要报告生成(异步任务) |
 
 - **端点**:`https://www.adamas-research.com/mcp`
 - **传输**:MCP streamable HTTP(无状态,支持断线重连后重新调用)
 - **认证**:每个请求携带 HTTP 头 `Authorization: Bearer <your-api-key>`,API key 向 ADAMAS 申请获取(key 明文只在发放时出现一次,请妥善保管)
-- **内容**:本公开主文档对应 Standard 档,**15 个工具**(12 个 data 类 + 3 个 research 提交工具)+ 2 个预置 prompts + 1 个 Agent Skill 包。Standard 包含模型选股排名、产业链量化选股与全球宏观入口。本公开文档只描述 Standard 契约。
+- **内容**:本公开主文档对应 Standard 档,**15 个工具**(12 个 data 类 + 3 个 research 提交工具)+ 2 个预置 prompts + 1 个 Agent Skill 包。Standard 包含最新已发布的量化选股结果、产业链量化选股与全球宏观入口。本公开文档只描述 Standard 契约。
 
 两类工具的契约有本质区别,集成前务必理解(详见第 3、6 节):
 
@@ -290,11 +290,13 @@ asyncio.run(main())
 
 ---
 
-#### `get_model_picks` — 最新一期模型选股排名
+#### `get_model_picks` — 最新已发布的量化选股 Top N
 
-**用途**:查询已发布的最新一期模型选股结果(不触发选股流程,秒级返回),
-含总分、百分位、预期收益及市场·风格·宏观分项,可按 L1 行业过滤。
-**非投资建议,引用需保留 `disclaimer`。**
+**用途**:读取 ADAMAS 量化选股模型最近一次已审核并发布的股票/资产打分结果。
+这里排名的是**股票/资产**,不是不同 AI 模型。该调用不会现场重新运行选股,
+通常秒级返回;结果含总分/百分位/预期收益及市场·风格·宏观分项,可按 L1 行业过滤。
+例如 `top_n=10` 表示返回本期量化评分最靠前的 10 只股票/资产。
+**非投资建议,引用需保留 `disclaimer`**。
 
 **参数**:
 
@@ -322,7 +324,7 @@ components:{market, style, macro}}`,rank 越小越靠前,`percentile` 为 0–10
      "components": {"market": 0.421, "style": 0.539, "macro": 0.489}}
   ],
   "meta": {
-    "note": "最新一期模型打分排名(纯量化,非投资建议);rank 越小越靠前",
+    "note": "最新已发布的量化选股结果(排名对象是股票/资产,不是不同模型);rank 越小越靠前;非投资建议",
     "disclaimer": "本内容由 ADAMAS 模型生成,仅供研究参考,不构成任何投资建议;据此操作风险自担。引用时须保留本声明。"
   }
 }
@@ -507,8 +509,9 @@ components:{market, style, macro}}`,rank 越小越靠前,`percentile` 为 0–10
 
 #### `get_global_macro` — 全球宏观国别九维度报告
 
-**用途**:先查有报告的经济体与九维度覆盖,再按经济体、维度和日期
-读报告正文。只读、秒级返回;报告含模型生成的研究观点,
+**用途**:先查有报告的经济体与九维度覆盖,再按经济体和维度
+读取最新报告正文。全球宏观报告的跨度较长,每个经济体×维度只提供最新版,
+不提供历史选择或跨期目录。只读、秒级返回;报告含模型生成的研究观点,
 **引用时必须原文保留 `meta.disclaimer`**。
 
 **参数**:
@@ -517,16 +520,18 @@ components:{market, style, macro}}`,rank 越小越靠前,`percentile` 为 0–10
 |---|---|---|---|---|
 | `country` | string | 否 | 不传返覆盖全景 | 经济体主键;必须取自无参返回的 `countries[].country_key` 或 `regions[].country_key` |
 | `dimension` | string | 否 | 不传返该经济体的九维度覆盖 | 维度 key;必须与 `country` 一起传,取自 `dimensions[].key` 或 `cells[].key` |
-| `report_date` | string | 否 | 最新一期 | 历史报告日期(`YYYY-MM-DD`);必须同时传 `country` + `dimension`,且应从最新正文返回的 `dates` 中选 |
 
-**四种调用方式**:
+为兼容滚动升级期间已缓存 schema 的旧客户端,当前工具 schema 暂保留 `report_date`。
+它不再用于选择版本：省略即可；仅当所传值恰好等于当前最新版日期时兼容成功，
+其他日期返回业务错误。新接入不要发送该字段。
+
+**三种调用方式**:
 
 | 调用 | 返回什么 |
 |---|---|
 | `get_global_macro()` | 覆盖全景:`countries[]`、`regions[]`、`dimensions[]`、`score_ready` |
-| `get_global_macro(country="China")` | 中国的九个 `cells[]`,每格标出有无报告、最新日期和历史期数 |
-| `get_global_macro(country="China", dimension="industry")` | 中国“主导产业”最新一期正文 + 全部可选历史日期 |
-| 再加 `report_date="2026-08-04"` | 指定历史期正文;日期不在 `dates` 中时返回 error |
+| `get_global_macro(country="China")` | 中国的九个 `cells[]`,每格标出有无报告及最新日期 |
+| `get_global_macro(country="China", dimension="industry")` | 中国“主导产业”最新正文 |
 
 九个维度 key 是:`industry`(主导产业)、`consumption`(消费与服务业)、
 `trade`(进出口)、`property`(建筑地产)、`inflation`(通胀)、`fiscal`(财政政策)、
@@ -545,12 +550,12 @@ components:{market, style, macro}}`,rank 越小越靠前,`percentile` 为 0–10
   用颜色暗示尚不存在的周期信号**。
 
 **经济体覆盖返回要点**:`country_key`、`country_name`、`cells[]`;
-九个格子恒定返回,每格为 `{key, label, order, has_report, report_date,
-periods}`。没有报告的格子也会保留,此时 `has_report=false`、`report_date=""`、
-`periods=0`;这是正常空态,不是错误。
+九个格子恒定返回,每格为 `{key, label, order, has_report, report_date}`。
+没有报告的格子也会保留,此时 `has_report=false`、`report_date=""`;
+这是正常空态,不是错误。
 
 **报告正文返回要点**:`country_key`、`country_name`、`dimension`、`label`、
-`report_date`、`content`(markdown 正文)、`dates[]`(该维度全部历史期,由新到旧)。
+`report_date`(最新版日期)、`content`(markdown 正文)。
 单篇正文超过输出上限时 `content` 会被截断,此时
 `meta.content_truncated=true` 并给出 `meta.content_chars_original`;不得把截断内容
 当作完整报告。
@@ -591,9 +596,9 @@ periods}`。没有报告的格子也会保留,此时 `has_report=false`、`repor
   "country_name": "中国",
   "cells": [
     {"key": "industry", "label": "主导产业", "order": 1,
-     "has_report": true, "report_date": "2026-08-04", "periods": 2},
+     "has_report": true, "report_date": "2026-08-04"},
     {"key": "trade", "label": "进出口", "order": 3,
-     "has_report": false, "report_date": "", "periods": 0}
+     "has_report": false, "report_date": ""}
     // 此处仅节选 2 格；真实成功响应固定返回完整 9 格。
   ],
   "meta": {"note": "…", "disclaimer": "…须原文保留…"}
@@ -601,16 +606,14 @@ periods}`。没有报告的格子也会保留,此时 `has_report=false`、`repor
 ```
 
 ```jsonc
-// 3) 调用:get_global_macro(
-//      country="China", dimension="industry", report_date="2026-07-04")
+// 3) 调用:get_global_macro(country="China", dimension="industry")
 {
   "country_key": "China",
   "country_name": "中国",
   "dimension": "industry",
   "label": "主导产业",
-  "report_date": "2026-07-04",
+  "report_date": "2026-08-04",
   "content": "# 中国·主导产业\n\n…(markdown 正文)",
-  "dates": ["2026-08-04", "2026-07-04"],
   "meta": {"note": "…", "disclaimer": "…须原文保留…"}
 }
 ```
@@ -653,7 +656,7 @@ research 类与 data 类的契约区别:**结果含模型生成的分析观点**
 
 #### `submit_stock_screen` — 提交产业链量化选股
 
-**用途**:按中文产业链名称触发选股流程,综合已发布模型排名、相似度与产业链分析,
+**用途**:按中文产业链名称触发选股流程,综合最新已发布的量化选股结果、相似度与产业链分析,
 产出产业链图谱与候选标的(含模型观点)。约 3–8 分钟。
 
 **参数**:
@@ -836,8 +839,8 @@ research 三个提交工具(`submit_deep_research` / `submit_stock_screen` /
 
 | Prompt | 参数 | 产出 |
 |---|---|---|
-| `industry_brief`(行业跟踪简报) | `industry` 产业名 | 景气度 + 六维趋势 + 历史快照 + 全市场模型排名中的相关代表标的 → 成稿报告 PDF 与公司基本面跟踪要点,成文标 as_of、保留 disclaimer |
-| `deep_research_report`(深度研究报告) | `topic` 研究主题 | 提交 plus 档深度研究 + 等待期间取产业数据与已发布模型排名 → 综合成文(研究结论注明来自 ADAMAS 研究引擎 + 数据佐证标 as_of + 交叉验证) |
+| `industry_brief`(行业跟踪简报) | `industry` 产业名 | 景气度 + 六维趋势 + 历史快照 + 全市场量化选股结果中的相关代表标的 → 成稿报告 PDF 与公司基本面跟踪要点,成文标 as_of、保留 disclaimer |
+| `deep_research_report`(深度研究报告) | `topic` 研究主题 | 提交 plus 档深度研究 + 等待期间取产业数据与最新量化选股结果 → 综合成文(研究结论注明来自 ADAMAS 研究引擎 + 数据佐证标 as_of + 交叉验证) |
 
 不支持 prompts 的客户端,可把上述编排写进你自己的系统提示词,方法论同源于第 7.2 节的 Skill。
 
