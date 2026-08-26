@@ -1,6 +1,6 @@
 {
   "name": "adamas-research-report",
-  "version": "2.3.0",
+  "version": "2.3.1",
   "description": "ADAMAS 投研能力:MCP 连接(产业景气度/产业链图谱/公司跟踪/全球宏观/模型选股/信息流/深度研究/纪要,Standard 档 15 工具)+ 投研报告方法论 Skill。需要环境变量 ADAMAS_API_KEY。",
   "author": {
     "name": "ADAMAS Research",
