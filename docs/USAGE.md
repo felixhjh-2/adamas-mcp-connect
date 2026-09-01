@@ -9,9 +9,9 @@ ADAMAS MCP 是 ADAMAS 金融投研平台的对外能力分发服务,以
 remote MCP endpoint 与 `Authorization: Bearer` 请求头的客户端
 (WorkBuddy、Kimi Code、Claude Code、Cursor、Codex、自建 agent 框架等)。
 
-> **接入前提**:当前服务未实现 MCP OAuth discovery / 自动授权,
-> 需手工配置端点和 Bearer key。如果你的客户端版本不能为 remote MCP
-> 连接设置自定义 HTTP header,就不能直接接入当前服务。
+> **两种接入方式**:能为 remote MCP 自定义 HTTP header 的客户端用 **Bearer key**(端点 +
+> `Authorization: Bearer <key>`);claude.ai / Claude Desktop 等只支持 OAuth 连接器的客户端走
+> **OAuth 自动授权**(只填端点 URL,客户端自动发现授权并绑定你的 ADAMAS 账号,无需手工填 key,见 2.6)。
 
 它对外提供八类投研能力:
 
@@ -136,14 +136,18 @@ annotations;因此建议保留 `writes`:纯查询可自动调用,提交研究等
 向启动 Cursor 的进程注入 `ADAMAS_API_KEY` 后重启 Cursor。密钥不写进
 `mcp.json`;Cursor 会按 `url` 自动使用 remote HTTP transport。
 
-### 2.6 Claude Desktop
+### 2.6 Claude 网页版(claude.ai)/ Claude Desktop —— OAuth 自动授权
 
-ADAMAS 当前的自定义 Bearer 认证不能直接配置进 Claude Desktop 的 remote
-connector。Claude Desktop 的 remote MCP 需从 Settings → Connectors 添加,
-当前界面提供免认证或 OAuth 流程;
-`claude_desktop_config.json` 只配本地 server,不会按上面 Cursor 的 JSON 连接
-remote HTTP server。由于 ADAMAS MCP 目前是自定义 Bearer header 且尚未实现
-OAuth,请改用 Kimi Code、Claude Code、Cursor、Codex 或 WorkBuddy。
+这两个客户端不支持为 remote MCP 设置自定义 HTTP header,改用 **OAuth 自动授权,无需手工填 key**:
+
+1. 设置(Settings)→ 连接器(Connectors)→ 添加自定义连接器;
+2. **URL** 填 `https://www.adamas-research.com/mcp`(MCP / streamable HTTP),不填任何请求头;
+3. 保存后点连接,客户端自动发现 ADAMAS 授权服务并跳转授权页;
+4. **前提**:你需已在 `www.adamas-research.com` 登录 ADAMAS 账号(授权页复用该登录态),
+   在授权页点"同意并连接"完成绑定后自动跳回;
+5. 连接成功即可在会话中看到工具;可用工具与配额由你账号名下 key 的档位决定。
+
+(`claude_desktop_config.json` 只配本地 server,不用于连接本 remote 服务。)
 
 ### 2.7 自建 agent(Python,官方 mcp SDK)
 
