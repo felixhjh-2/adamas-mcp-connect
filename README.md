@@ -10,8 +10,9 @@
 > 本仓库只包含接入材料(文档 / Skill / 示例),服务本体由 ADAMAS 托管运行。
 > 没有 API key 时以下配置可以先填好,拿到 key 即刻生效。
 >
-> 当前服务未实现 MCP OAuth discovery / 自动授权,需手工配置端点和 Bearer key。
-> 不能为 remote MCP 设置自定义 HTTP header 的客户端暂不能直接接入。
+> 两种接入方式:**Bearer key 手工配置**(能为 remote MCP 自定义 HTTP header 的客户端),或
+> **OAuth 自动授权**(claude.ai / Claude Desktop 等只支持 OAuth 连接器的客户端,只填端点 URL、
+> 客户端自动发现授权并绑定你的 ADAMAS 账号,无需手工填 key)。
 
 ## 30 秒接入
 
@@ -101,13 +102,12 @@ default_tools_approval_mode = "writes"
 向启动 Cursor 的进程注入 `ADAMAS_API_KEY` 后重启 Cursor。密钥不写进
 `mcp.json`;Cursor 会按 `url` 自动使用 remote HTTP transport。
 
-### Claude Desktop
+### Claude 网页版(claude.ai)/ Claude Desktop —— OAuth 自动授权
 
-ADAMAS 当前的自定义 Bearer 认证不能直接配置进 Claude Desktop 的 remote
-connector。Claude Desktop 的 remote MCP 需从 Settings → Connectors 添加,
-当前界面提供免认证或 OAuth 流程;
-`claude_desktop_config.json` 只配置本地 server,不能用来连接这种带自定义
-Bearer header 的 remote server。请改用 Kimi Code、Claude Code、Cursor、Codex 或 WorkBuddy。
+这两个客户端不支持为 remote MCP 设自定义 Bearer header,改用 **OAuth 自动授权,无需手工填 key**:
+Settings → Connectors → 添加自定义连接器,URL 填 `https://www.adamas-research.com/mcp`(不填请求头),
+保存后点连接会自动跳转 ADAMAS 授权页;**需先在 `www.adamas-research.com` 登录 ADAMAS 账号**,
+在授权页点"同意并连接"即完成绑定并可用。(`claude_desktop_config.json` 只配本地 server,不用于此。)
 
 ### 自建 agent(Python)
 
