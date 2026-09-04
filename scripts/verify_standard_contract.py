@@ -167,11 +167,38 @@ def main() -> None:
         "补最新模型偏好",
     ):
         require(stale_model_wording not in skill, f"Skill 残留模糊选股文案: {stale_model_wording}")
-    for document in (readme, usage):
-        for marker in ("自定义 Bearer 认证不能直接配置", "~/.codex/config.toml"):
+    oauth_sections = (
+        readme.split("### ChatGPT / Claude / 其他 MCP 客户端", 1)[1].split(
+            "### 自建 agent", 1
+        )[0],
+        usage.split("### 2.6 ChatGPT / Claude / 其他 MCP 客户端", 1)[1].split(
+            "### 2.7 自建 agent", 1
+        )[0],
+    )
+    callback_hosts = (
+        "chatgpt.com",
+        "claude.ai",
+        "claude.com",
+        "www.cursor.com",
+        "vscode.dev",
+        "insiders.vscode.dev",
+        "localhost",
+        "127.0.0.1",
+        "::1",
+    )
+    for document, oauth_section in zip((readme, usage), oauth_sections, strict=True):
+        for marker in ("OAuth 自动授权", "~/.codex/config.toml"):
             require(marker in document, f"公开接入口径缺 {marker}")
+        for marker in callback_hosts:
+            require(marker in oauth_section, f"OAuth 章节回调白名单缺 {marker}")
+        require(
+            "无需手工填 key 或 client secret" in oauth_section,
+            "OAuth public client 章节未明确无需 client secret",
+        )
         require("${env:ADAMAS_API_KEY}" in document, "Cursor 配置未从环境变量读取 key")
         require('"type": "http"' not in document, "Cursor 配置仍携带多余 transport type")
+    for marker in ("token_endpoint_auth_method=none", "S256 PKCE", "无需 `client_secret`"):
+        require(marker in oauth_sections[1], f"OAuth public client 章节契约缺 {marker}")
     kimi_sections = (
         readme.split("### Kimi Code", 1)[1].split("### Claude Code", 1)[0],
         usage.split("### 2.2 Kimi Code", 1)[1].split("### 2.3 Claude Code", 1)[0],
