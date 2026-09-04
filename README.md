@@ -4,14 +4,14 @@
 > 模型选股、每日信息流、深度研究与纪要生成 —— **一个 MCP 端点,Standard 档 15 个工具**。
 
 - **端点**:`https://www.adamas-research.com/mcp`(remote MCP,streamable HTTP,无需安装任何服务)
-- **认证**:`Authorization: Bearer <your-api-key>` —— API key 向 ADAMAS 团队申请
+- **认证**:Bearer key，或客户端原生 OAuth（public client + PKCE）
 - **完整文档**:[docs/USAGE.md](docs/USAGE.md)(全部工具的参数/返回/示例/配额/FAQ)
 
 > 本仓库只包含接入材料(文档 / Skill / 示例),服务本体由 ADAMAS 托管运行。
 > 没有 API key 时以下配置可以先填好,拿到 key 即刻生效。
 >
 > 两种接入方式:**Bearer key 手工配置**(能为 remote MCP 自定义 HTTP header 的客户端),或
-> **OAuth 自动授权**(claude.ai / Claude Desktop 等只支持 OAuth 连接器的客户端,只填端点 URL、
+> **OAuth 自动授权**(ChatGPT、Claude、Cursor Web、VS Code 等客户端,只填端点 URL、
 > 客户端自动发现授权并绑定你的 ADAMAS 账号,无需手工填 key)。
 
 ## 30 秒接入
@@ -102,12 +102,19 @@ default_tools_approval_mode = "writes"
 向启动 Cursor 的进程注入 `ADAMAS_API_KEY` 后重启 Cursor。密钥不写进
 `mcp.json`;Cursor 会按 `url` 自动使用 remote HTTP transport。
 
-### Claude 网页版(claude.ai)/ Claude Desktop —— OAuth 自动授权
+### ChatGPT / Claude / 其他 MCP 客户端 —— OAuth 自动授权
 
-这两个客户端不支持为 remote MCP 设自定义 Bearer header,改用 **OAuth 自动授权,无需手工填 key**:
-Settings → Connectors → 添加自定义连接器,URL 填 `https://www.adamas-research.com/mcp`(不填请求头),
+不支持自定义 remote MCP 请求头的客户端可用 **OAuth 自动授权,无需手工填 key 或 client secret**。
+ChatGPT 中先到 Settings → Security and login 开启 Developer mode，再打开 ChatGPT Plugins
+点 `+`；Claude 等其他客户端则在各自的 Apps/Connectors/MCP 入口添加连接。URL 填
+`https://www.adamas-research.com/mcp`（不填请求头），
 保存后点连接会自动跳转 ADAMAS 授权页;**需先在 `www.adamas-research.com` 登录 ADAMAS 账号**,
-在授权页点"同意并连接"即完成绑定并可用。(`claude_desktop_config.json` 只配本地 server,不用于此。)
+在授权页点"同意并连接"即完成绑定并可用。
+
+默认支持 `chatgpt.com`、`claude.ai`、`claude.com`、`www.cursor.com`、`vscode.dev`、
+`insiders.vscode.dev`，以及
+`localhost` / `127.0.0.1` / `::1` 本机回调。网页回调路径可动态变化，不必写死；远端仅允许
+HTTPS，且不接受任意网站或通配子域。(`claude_desktop_config.json` 只配本地 server,不用于此。)
 
 ### 自建 agent(Python)
 
