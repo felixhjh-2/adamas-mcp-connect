@@ -1,5 +1,14 @@
 # CHANGELOG
 
+## 2026-09-04
+
+- OAuth 动态客户端注册新增 ChatGPT、Cursor Web、VS Code 与 IPv6 loopback 回调支持，
+  保留 Claude 与 IPv4/localhost；网页路径可动态生成，但主机必须精确命中且使用 HTTPS；
+- 授权服务器发现文档显式声明 public client `token_endpoint_auth_method=none`，
+  public client 只走 S256 PKCE、不要求 `client_secret`；confidential client 的 secret
+  继续只存 SHA-256，并在 token/revoke 时校验；
+- README 与完整接入文档补齐 ChatGPT OAuth 步骤、默认回调主机和排障说明。
+
 ## 2026-08-26
 
 - `get_global_macro` 改为每个经济体×维度只提供最新报告;

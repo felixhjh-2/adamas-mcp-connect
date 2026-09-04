@@ -10,7 +10,7 @@ remote MCP endpoint 与 `Authorization: Bearer` 请求头的客户端
 (WorkBuddy、Kimi Code、Claude Code、Cursor、Codex、自建 agent 框架等)。
 
 > **两种接入方式**:能为 remote MCP 自定义 HTTP header 的客户端用 **Bearer key**(端点 +
-> `Authorization: Bearer <key>`);claude.ai / Claude Desktop 等只支持 OAuth 连接器的客户端走
+> `Authorization: Bearer <key>`);ChatGPT、Claude、Cursor Web、VS Code 等客户端也可走
 > **OAuth 自动授权**(只填端点 URL,客户端自动发现授权并绑定你的 ADAMAS 账号,无需手工填 key,见 2.6)。
 
 它对外提供八类投研能力:
@@ -28,7 +28,7 @@ remote MCP endpoint 与 `Authorization: Bearer` 请求头的客户端
 
 - **端点**:`https://www.adamas-research.com/mcp`
 - **传输**:MCP streamable HTTP(无状态,支持断线重连后重新调用)
-- **认证**:每个请求携带 HTTP 头 `Authorization: Bearer <your-api-key>`,API key 向 ADAMAS 申请获取(key 明文只在发放时出现一次,请妥善保管)
+- **认证**:二选一 —— 每个请求携带 `Authorization: Bearer <your-api-key>`（API key 向 ADAMAS 申请），或使用客户端原生 OAuth 自动授权（public client + S256 PKCE，无需手工 key/secret）
 - **内容**:本公开主文档对应 Standard 档,**15 个工具**(12 个 data 类 + 3 个 research 提交工具)+ 2 个预置 prompts + 1 个 Agent Skill 包。Standard 包含最新已发布的量化选股结果、产业链量化选股与全球宏观入口。本公开文档只描述 Standard 契约。
 
 两类工具的契约有本质区别,集成前务必理解(详见第 3、6 节):
@@ -136,16 +136,32 @@ annotations;因此建议保留 `writes`:纯查询可自动调用,提交研究等
 向启动 Cursor 的进程注入 `ADAMAS_API_KEY` 后重启 Cursor。密钥不写进
 `mcp.json`;Cursor 会按 `url` 自动使用 remote HTTP transport。
 
-### 2.6 Claude 网页版(claude.ai)/ Claude Desktop —— OAuth 自动授权
+### 2.6 ChatGPT / Claude / 其他 MCP 客户端 —— OAuth 自动授权
 
-这两个客户端不支持为 remote MCP 设置自定义 HTTP header,改用 **OAuth 自动授权,无需手工填 key**:
+不支持自定义 remote MCP 请求头的客户端可用 **OAuth 自动授权,无需手工填 key 或 client secret**:
 
-1. 设置(Settings)→ 连接器(Connectors)→ 添加自定义连接器;
+1. ChatGPT：到 Settings → Security and login 开启 Developer mode，再打开 ChatGPT Plugins
+   点 `+`；Claude 等其他客户端在各自的 Apps/Connectors/MCP 入口添加连接;
 2. **URL** 填 `https://www.adamas-research.com/mcp`(MCP / streamable HTTP),不填任何请求头;
 3. 保存后点连接,客户端自动发现 ADAMAS 授权服务并跳转授权页;
 4. **前提**:你需已在 `www.adamas-research.com` 登录 ADAMAS 账号(授权页复用该登录态),
    在授权页点"同意并连接"完成绑定后自动跳回;
 5. 连接成功即可在会话中看到工具;可用工具与配额由你账号名下 key 的档位决定。
+
+服务端默认按**精确主机名**支持以下回调，路径可由客户端动态生成：
+`chatgpt.com`、`claude.ai`、`claude.com`、`www.cursor.com`、`vscode.dev`、
+`insiders.vscode.dev`，以及
+`localhost` / `127.0.0.1` / `::1` 本机回调（适用于使用 loopback 的 Kimi Code、
+Windsurf、Cursor、VS Code 等桌面端）。远端回调强制 HTTPS，本机回调可用 HTTP；
+不会为任意网站或通配子域开放授权码回跳。
+
+客户端侧参考：[ChatGPT Developer mode 与 Plugins 接入](https://developers.openai.com/plugins/deploy/connect-chatgpt)、
+[Cursor MCP OAuth 回调](https://cursor.com/docs/mcp)、
+[VS Code MCP 授权](https://code.visualstudio.com/api/extension-guides/ai/mcp)。
+
+`token_endpoint_auth_method=none` 的公共客户端无需 `client_secret`：token 端点会校验
+一次性授权码、注册时的精确 redirect URI 与 S256 PKCE `code_verifier`。若客户端使用
+`client_secret_post/basic`，服务端只保存 secret 的 SHA-256，并在换 token 时校验。
 
 (`claude_desktop_config.json` 只配本地 server,不用于连接本 remote 服务。)
 
@@ -874,6 +890,11 @@ Skill 与 MCP prompts 方法论同源:装了 Skill 的 agent 会主动按 ADAMAS
 
 **Q:HTTP 401,提示「API key 已过期」?**
 你的 key 设有有效期且已到期。联系 ADAMAS 续期即可,续期立即生效,无需换 key。
+
+**Q:ChatGPT / Claude 等 OAuth 注册提示 `redirect_uri host not allowed`，或授权后跳不回客户端?**
+确认客户端回调主机位于 2.6 的精确白名单，并删除旧连接后重新创建，让客户端重新做动态注册。
+ChatGPT 每个 App 会生成不同 callback 路径，这是正常的；服务端按 `chatgpt.com` 主机放行，
+不要求固定路径。若授权页提示未登录，请先登录 `www.adamas-research.com` 再重试。
 
 **Q:HTTP 421(Misdirected Request)?**
 服务端开启了 DNS-rebinding 保护,只接受 Host 白名单内的请求(`www.adamas-research.com` 等)。直连官方端点不会遇到此问题;若你在自建网关/反向代理后面转发请求,必须**透传原始 Host 头**(如 nginx `proxy_set_header Host www.adamas-research.com;`),或联系 ADAMAS 把你的域名加入白名单。
