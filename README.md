@@ -8,10 +8,11 @@
 - **完整文档**:[docs/USAGE.md](docs/USAGE.md)(全部工具的参数/返回/示例/配额/FAQ)
 
 > 本仓库只包含接入材料(文档 / Skill / 示例),服务本体由 ADAMAS 托管运行。
-> 没有 API key 时以下配置可以先填好,拿到 key 即刻生效。
+> Bearer 方式需要 ADAMAS API key；OAuth 方式无需手工填写 key 或 client secret，
+> 但登录的 ADAMAS 账号仍需已开通 MCP 权限与配额。
 >
 > 两种接入方式:**Bearer key 手工配置**(能为 remote MCP 自定义 HTTP header 的客户端),或
-> **OAuth 自动授权**(ChatGPT、Claude、Cursor Web、VS Code 等客户端,只填端点 URL、
+> **OAuth 自动授权**(ChatGPT、Claude Code 及其他兼容客户端,只填端点 URL、
 > 客户端自动发现授权并绑定你的 ADAMAS 账号,无需手工填 key)。
 
 ## 30 秒接入
@@ -56,12 +57,28 @@ Kimi Code for VS Code 也支持 HTTP MCP;当扩展与 CLI 使用同一 `KIMI_COD
 
 ### Claude Code
 
+推荐直接使用 OAuth，无需 API key 或自定义请求头：
+
+```bash
+claude mcp add --transport http adamas https://www.adamas-research.com/mcp
+claude mcp login adamas
+```
+
+第二行也可改为启动 Claude Code 后输入 `/mcp`，选择 `adamas` 并完成
+Authenticate。浏览器会打开 ADAMAS 授权页；先登录已开通 MCP 权限的 ADAMAS
+账号，再同意授权。参见
+[Claude Code 官方 MCP 文档](https://code.claude.com/docs/en/mcp)。
+
+无人值守或明确使用 Bearer key 时，也可配置请求头：
+
 ```bash
 claude mcp add adamas --transport http https://www.adamas-research.com/mcp \
   --header "Authorization: Bearer <your-api-key>"
 ```
 
-或者用插件一步装齐(MCP 连接 + Skill 方法论一起装,key 走环境变量):
+本仓库现有 Claude Code 插件用于一步装齐 MCP 连接和 Skill 方法论，连接仍采用
+`ADAMAS_API_KEY` Bearer key；希望使用 OAuth 时请按上面的无请求头命令直连，
+再手动复制 Skill，或只把插件当作 Bearer 方案使用：
 
 ```bash
 export ADAMAS_API_KEY=<your-api-key>          # 建议写进 shell profile
@@ -105,11 +122,25 @@ default_tools_approval_mode = "writes"
 ### ChatGPT / Claude / 其他 MCP 客户端 —— OAuth 自动授权
 
 不支持自定义 remote MCP 请求头的客户端可用 **OAuth 自动授权,无需手工填 key 或 client secret**。
-ChatGPT 中先到 Settings → Security and login 开启 Developer mode，再打开 ChatGPT Plugins
-点 `+`；Claude 等其他客户端则在各自的 Apps/Connectors/MCP 入口添加连接。URL 填
-`https://www.adamas-research.com/mcp`（不填请求头），
-保存后点连接会自动跳转 ADAMAS 授权页;**需先在 `www.adamas-research.com` 登录 ADAMAS 账号**,
-在授权页点"同意并连接"即完成绑定并可用。
+
+- **ChatGPT**：在 ChatGPT Web 的 Settings → Security and login 开启 Developer mode，
+  再从 Plugins 的 `+`（部分界面显示为 Settings → Apps / Connectors → Create）添加远程 MCP。
+  URL 填 `https://www.adamas-research.com/mcp`，不填请求头。完整 MCP 当前面向
+  Business、Enterprise、Edu；Pro 在 Developer mode 下支持 read/fetch MCP。实际入口和
+  可用能力还受工作区管理员策略影响。参见
+  [OpenAI 接入步骤](https://developers.openai.com/plugins/deploy/connect-chatgpt)和
+  [Developer mode / MCP 可用范围](https://help.openai.com/en/articles/12584461-developer-mode-and-full-mcp-connectors-in-chatgpt-beta)。
+- **Claude Code**：使用上文不带 `--header` 的 `claude mcp add`，再运行
+  `claude mcp login adamas` 或在会话内用 `/mcp` 完成认证。
+- **claude.ai / Claude Desktop 及其他客户端**：若该版本提供自定义
+  Apps / Connectors / MCP 入口，添加同一 URL 且不填请求头；具体入口与可用范围以客户端为准。
+
+保存或连接后会自动跳转 ADAMAS 授权页；**需先在 `www.adamas-research.com` 登录已开通
+MCP 权限的 ADAMAS 账号**，在授权页点“同意并连接”即可完成绑定。
+
+服务端采用 Authorization Code + S256 PKCE；public client 使用
+`token_endpoint_auth_method=none`，无需 `client_secret`，并支持 refresh token
+轮换，客户端可在访问令牌过期后续期而无需反复登录。
 
 默认支持 `chatgpt.com`、`claude.ai`、`claude.com`、`www.cursor.com`、`vscode.dev`、
 `insiders.vscode.dev`，以及
