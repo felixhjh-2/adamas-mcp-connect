@@ -175,6 +175,29 @@ def main() -> None:
             "### 2.7 自建 agent", 1
         )[0],
     )
+    claude_code_sections = (
+        readme.split("### Claude Code", 1)[1].split("### Codex", 1)[0],
+        usage.split("### 2.3 Claude Code", 1)[1].split("### 2.4 Codex", 1)[0],
+    )
+    claude_oauth_command = (
+        "claude mcp add --transport http adamas "
+        "https://www.adamas-research.com/mcp"
+    )
+    for section in claude_code_sections:
+        for marker in (
+            "OAuth",
+            claude_oauth_command,
+            "claude mcp login adamas",
+            "/mcp",
+            "https://code.claude.com/docs/en/mcp",
+            "Bearer key",
+            "ADAMAS_API_KEY",
+        ):
+            require(marker in section, f"Claude Code 接入章节缺 {marker}")
+        require(
+            section.index(claude_oauth_command) < section.index("Authorization: Bearer"),
+            "Claude Code 接入未把 OAuth 无请求头方案放在 Bearer 方案之前",
+        )
     callback_hosts = (
         "chatgpt.com",
         "claude.ai",
@@ -199,6 +222,21 @@ def main() -> None:
         require('"type": "http"' not in document, "Cursor 配置仍携带多余 transport type")
     for marker in ("token_endpoint_auth_method=none", "S256 PKCE", "无需 `client_secret`"):
         require(marker in oauth_sections[1], f"OAuth public client 章节契约缺 {marker}")
+    for oauth_section in oauth_sections:
+        for marker in (
+            "https://developers.openai.com/plugins/deploy/connect-chatgpt",
+            "https://help.openai.com/en/articles/12584461-developer-mode-and-full-mcp-connectors-in-chatgpt-beta",
+            "Business",
+            "Enterprise",
+            "Edu",
+            "Pro",
+            "read/fetch",
+            "ChatGPT Web",
+            "token_endpoint_auth_method=none",
+            "S256 PKCE",
+            "refresh token",
+        ):
+            require(marker in oauth_section, f"ChatGPT / OAuth 接入章节缺 {marker}")
     kimi_sections = (
         readme.split("### Kimi Code", 1)[1].split("### Claude Code", 1)[0],
         usage.split("### 2.2 Kimi Code", 1)[1].split("### 2.3 Claude Code", 1)[0],
