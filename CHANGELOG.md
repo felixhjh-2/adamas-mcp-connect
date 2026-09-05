@@ -1,5 +1,15 @@
 # CHANGELOG
 
+## 2026-09-05
+
+- Claude Code 接入改为 OAuth 优先：补齐无请求头的 `claude mcp add`、
+  `claude mcp login` / `/mcp` 授权步骤，并明确现有插件连接仍采用
+  `ADAMAS_API_KEY` Bearer key；
+- ChatGPT 接入补齐 Plugins / Apps 界面差异、账号与工作区前提，以及
+  Business、Enterprise、Edu、Pro 当前支持范围；
+- README、完整使用文档与 FAQ 统一说明 public client、S256 PKCE、refresh token、
+  动态回调主机和 OAuth / Bearer 的适用边界。
+
 ## 2026-09-04
 
 - OAuth 动态客户端注册新增 ChatGPT、Cursor Web、VS Code 与 IPv6 loopback 回调支持，
