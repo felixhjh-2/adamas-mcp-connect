@@ -10,8 +10,9 @@ remote MCP endpoint 与 `Authorization: Bearer` 请求头的客户端
 (WorkBuddy、Kimi Code、Claude Code、Cursor、Codex、自建 agent 框架等)。
 
 > **两种接入方式**:能为 remote MCP 自定义 HTTP header 的客户端用 **Bearer key**(端点 +
-> `Authorization: Bearer <key>`);ChatGPT、Claude、Cursor Web、VS Code 等客户端也可走
-> **OAuth 自动授权**(只填端点 URL,客户端自动发现授权并绑定你的 ADAMAS 账号,无需手工填 key,见 2.6)。
+> `Authorization: Bearer <key>`);ChatGPT、Claude Code 及其他兼容客户端也可走
+> **OAuth 自动授权**(只填端点 URL,客户端自动发现授权并绑定你的 ADAMAS 账号,无需手工填 key
+> 或 client secret，但账号仍需已开通 MCP 权限与配额，见 2.6)。
 
 它对外提供八类投研能力:
 
@@ -95,12 +96,28 @@ MCP Servers 查看和测试连接。参见
 
 ### 2.3 Claude Code
 
+推荐使用 OAuth，不带 `--header`：
+
+```bash
+claude mcp add --transport http adamas https://www.adamas-research.com/mcp
+claude mcp login adamas
+```
+
+`claude mcp login adamas` 会打开浏览器完成 ADAMAS 登录与授权；也可启动 Claude Code，
+在会话内输入 `/mcp`，选择 `adamas` → Authenticate。账号需已开通 MCP 权限。
+验证时，`claude mcp list` 应显示 adamas 已连接，会话内 `/mcp` 可查看工具清单。
+详见 [Claude Code 官方 MCP 文档](https://code.claude.com/docs/en/mcp)。
+
+无人值守环境或明确使用 Bearer key 时，可改用：
+
 ```bash
 claude mcp add adamas --transport http https://www.adamas-research.com/mcp \
   --header "Authorization: Bearer <your-api-key>"
 ```
 
-验证:`claude mcp list` 应显示 adamas 已连接;会话内 `/mcp` 可查看工具清单。
+本仓库的 Claude Code 插件会同时安装 MCP 连接与 Skill，但其内置连接当前仍读取
+`ADAMAS_API_KEY` 并使用 Bearer key。需要 OAuth 时，请按本节无请求头命令直接连接，
+并按第 7.2 节手动安装 Skill；不要在 OAuth 连接上同时保留旧的 Authorization 请求头。
 
 ### 2.4 Codex
 
@@ -140,13 +157,20 @@ annotations;因此建议保留 `writes`:纯查询可自动调用,提交研究等
 
 不支持自定义 remote MCP 请求头的客户端可用 **OAuth 自动授权,无需手工填 key 或 client secret**:
 
-1. ChatGPT：到 Settings → Security and login 开启 Developer mode，再打开 ChatGPT Plugins
-   点 `+`；Claude 等其他客户端在各自的 Apps/Connectors/MCP 入口添加连接;
-2. **URL** 填 `https://www.adamas-research.com/mcp`(MCP / streamable HTTP),不填任何请求头;
-3. 保存后点连接,客户端自动发现 ADAMAS 授权服务并跳转授权页;
-4. **前提**:你需已在 `www.adamas-research.com` 登录 ADAMAS 账号(授权页复用该登录态),
+1. **ChatGPT Web**：到 Settings → Security and login 开启 Developer mode，再从
+   ChatGPT Plugins 的 `+` 添加；部分界面显示为 Settings → Apps / Connectors → Create。
+   完整 MCP 当前面向 Business、Enterprise、Edu；Pro 在 Developer mode 下支持
+   read/fetch MCP。入口和可用能力还可能受工作区管理员策略限制;
+2. **Claude Code**：执行 2.3 节不带 `--header` 的 `claude mcp add`，再运行
+   `claude mcp login adamas`，或在会话内用 `/mcp` 选择 Authenticate;
+3. **claude.ai / Claude Desktop 及其他客户端**：仅当该版本提供自定义
+   Apps / Connectors / MCP 入口时添加；具体入口与可用范围以客户端为准;
+4. **URL** 统一填 `https://www.adamas-research.com/mcp`(MCP / streamable HTTP),不填任何请求头;
+5. 保存后点连接,客户端自动发现 ADAMAS 授权服务并跳转授权页;
+6. **前提**:你需已在 `www.adamas-research.com` 登录已开通 MCP 权限的 ADAMAS 账号
+   (授权页复用该登录态),
    在授权页点"同意并连接"完成绑定后自动跳回;
-5. 连接成功即可在会话中看到工具;可用工具与配额由你账号名下 key 的档位决定。
+7. 连接成功即可在会话中看到工具;可用工具与配额由账号档位决定。
 
 服务端默认按**精确主机名**支持以下回调，路径可由客户端动态生成：
 `chatgpt.com`、`claude.ai`、`claude.com`、`www.cursor.com`、`vscode.dev`、
@@ -156,11 +180,14 @@ Windsurf、Cursor、VS Code 等桌面端）。远端回调强制 HTTPS，本机�
 不会为任意网站或通配子域开放授权码回跳。
 
 客户端侧参考：[ChatGPT Developer mode 与 Plugins 接入](https://developers.openai.com/plugins/deploy/connect-chatgpt)、
+[ChatGPT Developer mode / MCP 可用范围](https://help.openai.com/en/articles/12584461-developer-mode-and-full-mcp-connectors-in-chatgpt-beta)、
+[Claude Code MCP 与 OAuth](https://code.claude.com/docs/en/mcp)、
 [Cursor MCP OAuth 回调](https://cursor.com/docs/mcp)、
 [VS Code MCP 授权](https://code.visualstudio.com/api/extension-guides/ai/mcp)。
 
 `token_endpoint_auth_method=none` 的公共客户端无需 `client_secret`：token 端点会校验
-一次性授权码、注册时的精确 redirect URI 与 S256 PKCE `code_verifier`。若客户端使用
+一次性授权码、注册时的精确 redirect URI 与 S256 PKCE `code_verifier`，并签发可轮换的
+refresh token，让兼容客户端在访问令牌过期后续期而无需反复登录。若客户端使用
 `client_secret_post/basic`，服务端只保存 secret 的 SHA-256，并在换 token 时校验。
 
 (`claude_desktop_config.json` 只配本地 server,不用于连接本 remote 服务。)
@@ -895,6 +922,12 @@ Skill 与 MCP prompts 方法论同源:装了 Skill 的 agent 会主动按 ADAMAS
 确认客户端回调主机位于 2.6 的精确白名单，并删除旧连接后重新创建，让客户端重新做动态注册。
 ChatGPT 每个 App 会生成不同 callback 路径，这是正常的；服务端按 `chatgpt.com` 主机放行，
 不要求固定路径。若授权页提示未登录，请先登录 `www.adamas-research.com` 再重试。
+
+**Q:Claude Code 添加后仍显示 401，或没有出现 OAuth 登录?**
+先检查现有 `adamas` 配置。OAuth 命令必须省略 `--header` / `Authorization`；如果此前建过
+Bearer 连接，删除旧连接后按 2.3 节的 OAuth 命令重新添加，再运行
+`claude mcp login adamas` 或在 `/mcp` 中 Authenticate。本仓库插件的内置连接仍是
+`ADAMAS_API_KEY` Bearer 方案；使用插件连接时必须注入该环境变量。
 
 **Q:HTTP 421(Misdirected Request)?**
 服务端开启了 DNS-rebinding 保护,只接受 Host 白名单内的请求(`www.adamas-research.com` 等)。直连官方端点不会遇到此问题;若你在自建网关/反向代理后面转发请求,必须**透传原始 Host 头**(如 nginx `proxy_set_header Host www.adamas-research.com;`),或联系 ADAMAS 把你的域名加入白名单。
