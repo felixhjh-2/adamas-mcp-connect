@@ -162,7 +162,7 @@ ADAMAS_API_KEY=<your-api-key> python examples/quickstart.py
 |---|---|
 | 资产解析 | `search_assets`(名称/代码 → 标准信息+行业分类) |
 | 产业 | `get_industry_scores`(景气度+六维趋势)`get_industry_graph`(产业链传导图谱)`get_industry_report`(报告 PDF) |
-| 公司 | `check_company_coverage`(批量查覆盖)`get_company_tracking`(跟踪报告全文,含历史期) |
+| 公司 | `check_company_coverage`(批量查覆盖,支持代码/简称)`get_company_tracking`(跟踪报告全文,含历史期) |
 | 全球宏观 | `get_global_macro`(国别九维度最新报告) |
 | 选股 | `get_model_picks`(最新已发布的量化选股 Top N);`submit_stock_screen`(产业链选股,异步) |
 | 信息流 | `get_info_feed`(当日要闻打分摘要) |
