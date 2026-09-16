@@ -14,7 +14,10 @@ import sys
 
 import httpx
 from mcp import ClientSession
-from mcp.client.streamable_http import streamable_http_client
+try:
+    from mcp.client.streamable_http import streamable_http_client
+except ImportError:
+    from mcp.client.streamable_http import streamablehttp_client as streamable_http_client
 
 URL = "https://www.adamas-research.com/mcp"
 

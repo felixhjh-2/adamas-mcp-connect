@@ -204,7 +204,10 @@ python -m pip install "mcp>=1.28.1,<2"
 import asyncio, json
 import httpx
 from mcp import ClientSession
-from mcp.client.streamable_http import streamable_http_client
+try:
+    from mcp.client.streamable_http import streamable_http_client
+except ImportError:
+    from mcp.client.streamable_http import streamablehttp_client as streamable_http_client
 
 URL = "https://www.adamas-research.com/mcp"
 HEADERS = {"Authorization": "Bearer <your-api-key>"}
@@ -442,11 +445,11 @@ components:{market, style, macro}}`,rank 越小越靠前,`percentile` 为 0–10
 
 | 名称 | 类型 | 必填 | 默认 | 说明 |
 |---|---|---|---|---|
-| `company` | string | 是 | — | 公司名,支持模糊匹配 |
+| `company` | string | 是 | — | 公司名或资产代码(如 `"601899.SH"`),支持模糊匹配与交易所类别后缀自动剥离(如 `"万科A"` → `"万科"`, `"美团-W"` → `"美团"`) |
 | `include_content` | bool | 否 | true | 是否返回全文;false 时只返回目录 |
 | `report_date` | string | 否 | 最新一期 | 取历史期全文(`YYYY-MM-DD`,从 `history` 目录中选;传错会返回可选日期表) |
 
-**返回结构要点**:`company`、`latest_report_date`、`history[]`(`{report_date, company}`)、`content`(最新一期全文 markdown)、`meta`(note + `disclaimer`)。未找到时返回 error,并在 `did_you_mean` 里给出相近的公司名(按输入前两字宽松匹配),照着改一次通常就能命中。报告存储暂不可用时 `content` 为空串并附 `content_error` 说明(目录仍可用)。
+**返回结构要点**:`company`、`latest_report_date`、`history[]`(`{report_date, company}`)、`content`(最新一期全文 markdown)、`meta`(note + `disclaimer`)。未找到时返回 error,并在 `did_you_mean` 里给出相近的公司名(按输入前两字宽松匹配);若模糊命中多家公司(如输入 `"中国"`),返回 `matched_by: "ambiguous"` 与 `alternatives` 候选列表以供准确选择。报告存储暂不可用时 `content` 为空串并附 `content_error` 说明(目录仍可用)。
 
 > **拿到一批公司时先用 `check_company_coverage` 批量筛**,不要对本工具循环单查 —— 几十个往返又慢又会撞 60 次/分钟的频率限制,而且每次都把整篇报告全文拉回来。
 
@@ -482,9 +485,9 @@ components:{market, style, macro}}`,rank 越小越靠前,`percentile` 为 0–10
 
 | 名称 | 类型 | 必填 | 默认 | 说明 |
 |---|---|---|---|---|
-| `names` | string[] | 是 | — | 公司名列表,**一次最多 100 家**(支持模糊匹配);超过请分批 |
+| `names` | string[] | 是 | — | 公司名或资产代码列表(如 `["贵州茅台", "300750.SZ", "万科A"]`),**一次最多 100 项**(支持模糊匹配与交易所类别后缀自动剥离);超过请分批 |
 
-**返回结构要点**:`covered[]`(`{asked 你传的名字, company_name 库中标准名, latest_report_date, periods 历史期数}`)、`not_covered[]`(没覆盖的原样回显)、`summary`(`{asked, covered, not_covered}`)、`meta.note`。取全文时请用 `covered[].company_name`(库中标准名)去调 `get_company_tracking`。
+**返回结构要点**:`covered[]`(`{company_name 库中标准名, latest_report_date, periods 历史期数, asked_as 原始入参列表}`)、`not_covered[]`(`[{asked, asked_as}]`,代码错后缀时带 `did_you_mean`)、`ignored[]`(空白项列表)、`summary`(`{asked, unique_companies, covered, not_covered, ignored}`)、`meta.note`。取全文时请用 `covered[].company_name`(库中标准名)去调 `get_company_tracking`。
 
 **示例**:
 
@@ -493,12 +496,15 @@ components:{market, style, macro}}`,rank 越小越靠前,`percentile` 为 0–10
 // 返回(取自真实调用):
 {
   "covered": [
-    {"asked": "贵州茅台", "company_name": "贵州茅台", "latest_report_date": "2026-08-05", "periods": 5},
-    {"asked": "宁德时代", "company_name": "宁德时代", "latest_report_date": "2026-08-07", "periods": 5}
+    {"company_name": "贵州茅台", "latest_report_date": "2026-08-05", "periods": 5, "asked_as": ["贵州茅台"]},
+    {"company_name": "宁德时代", "latest_report_date": "2026-08-07", "periods": 5, "asked_as": ["宁德时代"]}
   ],
-  "not_covered": ["某不存在公司XYZ"],
-  "summary": {"asked": 3, "covered": 2, "not_covered": 1},
-  "meta": {"note": "covered 里的 company_name 是库中的标准名,取全文请用 get_company_tracking(company=该标准名)"}
+  "not_covered": [
+    {"asked": "某不存在公司XYZ", "asked_as": ["某不存在公司XYZ"]}
+  ],
+  "ignored": [],
+  "summary": {"asked": 3, "unique_companies": 3, "covered": 2, "not_covered": 1, "ignored": 0},
+  "meta": {"note": "入参可传公司名或资产代码(代码会先解析成公司名);已按归一化名去重。covered 里的 company_name 是库中标准名,取全文用 get_company_tracking(company=该标准名)"}
 }
 ```
 
@@ -527,15 +533,15 @@ components:{market, style, macro}}`,rank 越小越靠前,`percentile` 为 0–10
 
 不带参数返回全量图谱(约 190 节点 / 340+ 边)。
 
-**返回结构要点**:`nodes[]`(`{node_id, name, layer, sector, score, signals}`)、`edges[]`(`{src, dst, type, strength, channel, delay_ticks, sign}`)、`counts`。含 `disclaimer`。
+**返回结构要点**:`nodes[]`(`{node_id, name, layer, sector, score, score_source, signals}`)、`edges[]`(`{src, dst, type, strength, channel, delay_ticks, sign}`)、`counts`。其中 `signals` 为具名六维方向符号对象(`{current, expected, supply, cost, competition, export}`，取值为 `↗` 改善 / `→` 持平 / `↘` 恶化)，与 `get_industry_scores.trends` 同源同构。含 `disclaimer`。
 
 ---
 
 #### `get_strategy_reports` — 策略沙盘推演报告
 
-**用途**:按策略主题的沙盘推演报告与圆桌会议资料的 PDF 下载链接(10 分钟有效)。
+**用途**:按策略主题的沙盘推演报告 PDF 下载链接(10 分钟有效)。
 
-**参数**:无。**返回**:`strategy_reports[]`(`{strategy, pdf_url, updated_at}`)、`round_table_documents[]`。含 `disclaimer`。
+**参数**:无。**返回**:`strategy_reports[]`(`{strategy, pdf_url, updated_at}`)、`meta`。含 `disclaimer`。
 
 ---
 
@@ -831,6 +837,7 @@ get_research_task(task_id) ──► running(带 progress 阶段描述)──►
 | 请求频率(rpm) | 60 次/分钟(令牌桶) | **HTTP 429** + `Retry-After` 头 + JSON `{error, retry_after_seconds}` |
 | data 类日额度 | 2000 次/日 | `error: "数据类工具今日额度(2000)已用完"` + `retry_after_seconds`(到次日 0 点的秒数) |
 | research 类日额度 | 20 次提交/日 | `error: "研究类工具今日额度(20)已用完"` + `retry_after_seconds`(到次日 0 点的秒数) |
+| 单 key 研究并发 | 每个 key 同时 1 个在跑 | `error: "你的上一个研究任务还在进行中(每个 key 同时只允许一个),请等它完成后再提交"` + `retry_after_seconds: 60` |
 | 深度研究全局并发 | 全部 key 合计 2 个在跑 | `error: "深度研究并发已满,请稍后重试"` + `retry_after_seconds: 120` |
 | 产业链选股全局并发 | 全部 key 合计 1 个在跑 | `error: "选股任务并发已满,请稍后重试"` + `retry_after_seconds: 180` |
 | 深度纪要全局并发 | 全部 key 合计 1 个在跑 | `error: "纪要生成并发已满,请稍后重试"` + `retry_after_seconds: 300` |
@@ -858,6 +865,7 @@ research 三个提交工具(`submit_deep_research` / `submit_stock_screen` /
 
 说明:
 
+- **每个 key 同时只允许 1 个 research 任务在跑**(单 key 并发保护)。未完成前重复提交会直接返回退避 60 秒;
 - research 日额度只在**提交**时消耗;`get_research_task` 轮询走 data 类配额;
 - research 全局并发闸是服务级保护(受上游算力约束),与你的用量无关也可能撞到——把「提交失败 + 按 `retry_after_seconds` 重试」做进你的任务队列逻辑;
 - **频率(rpm)按每个 HTTP 请求计**,包含 `initialize`、`tools/list`、`prompts/*`、`ping` 等协议请求,不只是工具调用。超限返回 **HTTP 429**(带 `Retry-After` 头);

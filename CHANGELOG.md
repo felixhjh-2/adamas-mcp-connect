@@ -1,5 +1,14 @@
 # CHANGELOG
 
+## 2026-09-16
+
+- 订正 `check_company_coverage` 返回结构说明与示例：明确 `covered[].asked_as` 数组口径、`not_covered[]` 结构体数组与 `ignored`、`summary.unique_companies` 字段；
+- 订正 `get_company_tracking` 与 `check_company_coverage` 参数支持：补充股票代码（如 `300750.SZ`）与交易所类别后缀（如 `万科A`、`美团-W`）自动归一化及模糊多匹配候选返回说明；
+- 清理 `get_strategy_reports` 中已下线的旧版 `round_table_documents` 字段及旧称残留；
+- 补齐配额表中单 key 研究任务并发限制（每个 key 同一时刻只允许 1 个研究任务进行中，超限退避 60 秒）；
+- 优化 Python SDK 快速开始代码中 `streamable_http_client` 导入容错；
+- 明确 `get_industry_graph` 中 `signals` 六维具名趋势对象结构。
+
 ## 2026-09-05
 
 - Claude Code 接入改为 OAuth 优先：补齐无请求头的 `claude mcp add`、
