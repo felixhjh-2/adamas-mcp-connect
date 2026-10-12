@@ -698,9 +698,11 @@ research 类与 data 类的契约区别:**结果含模型生成的分析观点**
 
 **付费提交幂等（候选，尚未发布）**：三个提交工具均新增可选 `idem_key`，为空或省略时保留每次 RPC 创建新提交意图的旧行为。非空键必须为 1–128 个 ASCII 字符，匹配 `[A-Za-z0-9][A-Za-z0-9_.:-]*`。在同一 API key、同一工具内，同键与完整业务参数一致时返回原任务，不重复扣本次账号用量；跨 key 或跨工具不能恢复原任务。深度研究的 `question`、`mode`、`session_id` 都影响业务，重放必须保持一致。追问使用同一 session_id、不同 question 时是新业务，应使用新 idem_key。
 
-同键换参返回 MCP 工具错误 `error_class="BadParam"`，不是 HTTP 409；恢复原任务须保留原键和原参数，明确提交新业务才使用新键。**新键不等于恢复原任务**。回执丢失或受理状态未知时，只查 `list_my_research_tasks` / `get_research_task`；不要盲目重投、换键或推断任务已取消、已退款。
+同键换参返回 MCP 工具错误 `error_class="BadParam"`，不是 HTTP 409；恢复原任务须保留原键和原参数，明确提交新业务才使用新键。**新键不等于恢复原任务**。回执丢失或受理状态未知时，先用 `list_my_research_tasks` 找回 task_id，再用 `get_research_task` 查询原任务；不要盲目重投、换键或推断任务已取消、已退款。
 
-**提交回执**保留 `task_id`、`status:"running"`、`eta_hint`、`next_step`，新增 `idem_key`（回显客户键，无键为空串）与 `idempotency_persisted:true`。后者只表示提交意图已记录，不证明研究引擎已受理或执行，也不让空键跨 RPC 去重。受理待确认时可能带 `progress`，重放时可能带原任务的 `task_status`；外层 status 保留旧回执口径，任务当前状态与结果以轮询为准。失败响应若带 task_id，先查询该任务并按 `recovery` 处理；只有明确允许安全重放时才使用同一原键和完整原参数。
+**提交回执**保留 `task_id`、`status:"running"`、`eta_hint`、`next_step`，新增 `idem_key` 与 `idempotency_persisted:true`。显式传键时回显原键；为空或省略时返回为本次意图生成的 `auto:<UUIDhex>` 恢复键。本候选创建的付费任务在 `get_research_task` 中也返回该恢复键。需要恢复提交时，由调用者显式向同一工具传入返回的 `idem_key` 与完整原业务参数，才会恢复原意图；继续传空键仍会新建意图。轮询只查询、同步原任务状态，不会自动重新派发付费任务。
+
+`idempotency_persisted:true` 只表示提交意图已记录，不证明研究引擎已受理或执行。受理待确认时可能带 `progress`，重放时可能带原任务的 `task_status`；外层 status 保留旧回执口径，任务当前状态与结果以轮询为准。失败响应若带 task_id，先查询该任务并按 `recovery` 处理。
 
 ---
 
@@ -809,6 +811,8 @@ data 类配额(rpm/日额度),**不消耗 research 日额度**——放心轮询
 | `done` | `{task_id, status: "done", result: {...}}` |
 | `failed` | `{task_id, status: "failed", error: "<原因>"}` |
 
+本候选创建的付费任务还返回 `idem_key` 与 `idempotency_persisted:true`；即使提交时省略或传空键，也可先查历史找到 task_id，再轮询取得生成的 `auto:<UUIDhex>` 恢复键。历史只提供任务定位，恢复提交须向同一工具显式传该键与完整原参数，轮询不会自动重新派发。旧任务可能没有这些字段。
+
 `done` 时的 `result` 结构:
 
 - 深度研究:保留 `{answer(完整回答 markdown), mode, engine, evidence_count, web_evidence_count, disclaimer}`，新增 `query`(上游问题，可能经过改写)、`created_at`(有效带时区时间，无效时为空串)、`doc_id_mapping`、`meta` 与 `citation_note`。`mode` 回显提交模式；`engine` 当前为 `"agentic"`；两个 evidence 计数当前恒为 0，请勿据此推断证据数量。`doc_id_mapping` 形如 `{"E1":{"doc_id":"安全文档标识","t0_date":"2026-10-01"}}`，仅接受 E 正整数编号，日期未知时为空串；`meta` 可能仅含非负整数 `latency_ms`，也可能为空。映射常为空，不保证每个回答都有可追溯文档；无映射时保留正文原 E 编号，不编造标题或链接，并说明引用信息有限。危险路径、存储 URI、签名 URL 与凭据型标识不会透出；历史已完成任务也使用同一结果契约;
@@ -875,7 +879,7 @@ get_research_task(task_id) ──► running(带 progress 阶段描述)──►
 **实践建议**:
 
 - 提交返回中的 `next_step` 字段已给出轮询指引,agent 直接照做即可;
-- 提交回执丢失、超时、网络断开或 progress 提示受理待确认时，只用 `list_my_research_tasks` / `get_research_task` 恢复并查询原任务；网络断开不等于任务取消，也不等于已退款。保留原 idem_key 与完整参数，不盲重投；无键调用每次 RPC 都是新意图;
+- 提交回执丢失、超时、网络断开或 progress 提示受理待确认时，先查 `list_my_research_tasks` 找回 task_id，再轮询 `get_research_task` 取回状态与恢复键；网络断开不等于任务取消，也不等于已退款。需要恢复提交时，显式传返回的 idem_key 与完整原参数；继续传空键仍会新建意图，轮询不会自动重新派发;
 - 等待期间不要空转:可先用 data 类工具取相关产业/标的的客观数据、起草报告框架(预置 prompts 即按此编排,见第 7 节);
 - 任务可能触发超时结算；以已落库终态与 `recovery` 为准，受理未知时不自行判死或重新生成。明确决定再次生成时使用新 idem_key；这是新任务，会正常消耗提交额度;
 - 轮询到 `done` / `failed` 后状态即为终态,结果已落库,可重复查询;
