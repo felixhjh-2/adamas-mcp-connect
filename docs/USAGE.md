@@ -1,5 +1,7 @@
 # ADAMAS MCP 使用文档
 
+> **候选契约(2026-10-12，尚未发布)**:生产端点可能仍运行旧版；当前可用工具与参数以 `tools/list`、`prompts/list` 和 `list_capabilities().service` 为准。
+
 > 面向外部集成方。读完本文即可把 ADAMAS 投研能力接进你自己的 agent / IDE / 办公工具。
 
 ## 1. 概述
@@ -23,14 +25,14 @@ remote MCP endpoint 与 `Authorization: Bearer` 请求头的客户端
 | 产业关联图谱 | 约 190 个产业节点 + 产业链传导关系边(方向/强度/时滞),支持传导链推演 |
 | 公司跟踪 | 约 2400 家公司的跟踪报告全文(markdown,含历史期)与历史目录 |
 | 全球宏观 | 分经济体的九维度报告覆盖与最新正文 |
-| 每日信息流 | 多源聚合后二次加工的当日市场要闻打分摘要(晨会/盘前场景) |
+| 每日信息流 | 多源聚合后二次加工的最新文件摘要，明示文件日期与 stale(晨会/盘前场景) |
 | 模型与产业链选股 | 最新已发布的量化选股 Top N(排名股票/资产,秒级只读)与产业链量化选股任务(异步) |
 | 深度研究与纪要 | 深度研究问答、深度纪要报告生成(异步任务) |
 
 - **端点**:`https://www.adamas-research.com/mcp`
 - **传输**:MCP streamable HTTP(无状态,支持断线重连后重新调用)
 - **认证**:二选一 —— 每个请求携带 `Authorization: Bearer <your-api-key>`（API key 向 ADAMAS 申请），或使用客户端原生 OAuth 自动授权（public client + S256 PKCE，无需手工 key/secret）
-- **内容**:本公开主文档对应 Standard 档,**15 个工具**(12 个 data 类 + 3 个 research 提交工具)+ 2 个预置 prompts + 1 个 Agent Skill 包。Standard 包含最新已发布的量化选股结果、产业链量化选股与全球宏观入口。本公开文档只描述 Standard 契约。
+- **内容**:本公开主文档对应 Standard 档,**17 个工具**(14 个 data 类 + 3 个 research 提交工具，含额度自查与任务历史)+ 2 个预置 prompts + 1 个 Agent Skill 包。Standard 包含最新已发布的量化选股结果、产业链量化选股与全球宏观入口。本公开文档只描述 Standard 契约。
 
 两类工具的契约有本质区别,集成前务必理解(详见第 3、6 节):
 
@@ -235,7 +237,7 @@ async def main():
             caps = parse(await session.call_tool("list_capabilities", {}))
             print(caps["freshness"])
 
-            # 3) 产业景气度 + 当日高分信息流
+            # 3) 产业景气度 + 最新高分信息流(另检查 stale)
             ind = parse(await session.call_tool("get_industry_scores", {"industry": "存储"}))
             print(ind["industries"][0]["name"], ind["industries"][0]["score"])
             feed = parse(await session.call_tool("get_info_feed", {"limit": 3}))
@@ -248,20 +250,22 @@ asyncio.run(main())
 
 ### 2.8 接入后的第一次调用(约定)
 
-1. **先调 `list_capabilities`**:拿覆盖范围与各数据域新鲜度(`freshness`),行情为交易日盘后导入,别把旧数据当今天的;
+1. **先调 `list_capabilities`**:拿授权工具目录/工作流(`service`)、覆盖范围与各数据域新鲜度(`freshness`),行情为交易日盘后导入,别把旧数据当今天的；精确参数 schema 以 `tools/list` 为准;
 2. **标的名可先解析**:用 `search_assets` 把公司名/代码解析成标准信息(行业分类/市场风格属性);
 3. **所有数值以返回中的 `as_of` 为准**;
-4. **超限时按 `retry_after_seconds` 退避**,不要密集重试。
+4. **错误先看 `error_class` 与 `recovery`**，结合可选 `retry_after_seconds` 处理，不要密集或盲目重试。
 5. **全球宏观先无参调用** `get_global_macro()`:从返回的覆盖全景取
    `country_key`、九维度及最新报告日期,再按需取正文。
+6. **批量任务前自查 `get_my_quota`**；研究提交回执丢失时先用 `list_my_research_tasks` 找回 task_id，再轮询，不要直接再次提交。
 
 ## 3. 工具参考
 
 通用约定:
 
-- 所有工具返回 JSON dict。业务层错误(参数错误、未找到、配额超限等)会返回 `{"error": "<原因>"}` 并把 MCP `CallToolResult.isError` 标为 `true`;可退避的错误额外带 `retry_after_seconds` 字段。它们不是 HTTP/传输异常,SDK 通常仍会返回 `CallToolResult`,因此你的 agent 应同时处理 `isError` 和 JSON 中的 `error` 键;
-- 数据类返回带 `meta` 字段(口径说明,观点相关的还含 `disclaimer`),数值带各自的 `as_of`(数据截止日);全球宏观报告以 `latest_date` / `report_date` 标日期;
-- 参数中的日期一律 `YYYY-MM-DD`;返回中的 `as_of` / `report_date` / 序列日期也是 `YYYY-MM-DD`,仅产业跟踪的 `summary_as_of` 与 `score_history[].date` 为带时区的完整时间戳(如 `2026-07-20 16:06:22+00:00`)。
+- 所有工具返回 JSON dict。业务层错误(参数错误、未找到、配额超限等)保留 `error` 并把 MCP `CallToolResult.isError` 标为 `true`；候选版本新增 `error_class` 与 `recovery:{action,retry_safe,...}`，可退避错误还带 `retry_after_seconds`。SDK 通常仍会返回 `CallToolResult`，agent 应同时处理 `isError` 与 JSON 中的 `error`，不能只看 HTTP 200;
+- `recovery.action` 可能为 `revise_input`(修改参数)、`stop`(停止)、`check_access`(检查权限)、`check_quota`(检查额度)、`wait`(等待)、`check_task_history`(先恢复任务)或 `contact_support`(联系支持)。仅在 `retry_safe=true` 时自动重放；付费研究提交结果不明时先查 `list_my_research_tasks`，不要直接重复提交。`retry_after_seconds` 是等待指引，不单独代表可以安全重放;
+- 数据类返回的 `meta` 解释口径，观点相关的还含 `disclaimer`；数值使用自身 `as_of`，不要拿查询时间补齐缺失的数据日期。目录/状态响应不一定包含数值截止日;
+- 日期输入使用 `YYYY-MM-DD`；时间戳字段可能带时区，例如产业 `summary_as_of`、任务时间与信息流 `source_updated_at`。信息流 `as_of` 是文件修改日期，不是每条事件发布日期。
 
 ### 3.1 data 类(客观数据与已发布结果,秒级返回)
 
@@ -283,6 +287,7 @@ asyncio.run(main())
 | `coverage.company_reports` | `{reports: 报告总数, companies: 覆盖公司数}` |
 | `industry_catalog` | **全部产业名**(约190个),产业类工具唯一有效的取值集合 —— 详见 `get_industry_scores` 一节的名称口径 |
 | `freshness` | Standard 可见数据域的最新截止日:`model_picks_as_of`、`company_reports_latest` |
+| `service` | `contract_version`、当前授权 `tools[]`、`workflows[]` 与 `usage` 指引。工具项包含 `name`、中文 `title`、`execution`、`quota`、`may_charge_credits`、`required_arguments`、`read_only`；精确类型与约束以 `tools/list` schema 为准 |
 | `meta.note` | 口径说明 |
 
 **示例**:
@@ -298,13 +303,20 @@ asyncio.run(main())
     "company_reports": {"reports": 3200, "companies": 2368}
   },
   "industry_catalog": ["3D打印", "AI应用", "AI模型", "CXO", "光伏", "固态电池", "…共约190个"],
-  "freshness": {
-    "model_picks_as_of": "2026-07-23",
-    "company_reports_latest": "2026-07-24"
-  },
+  "freshness": {"model_picks_as_of": "2026-07-23", "company_reports_latest": "2026-07-24"},
   "meta": {"note": "freshness 即各数据域的截止日;所有数值以返回中的 as_of 为准"}
 }
 ```
+
+---
+
+#### `get_my_quota` — 当前 key 配额自查
+
+**用途**:查询当前 key 的档位级别、今日数据类/研究类额度与在途任务数。批量调用或提交研究前建议先查。
+
+**参数**:无。
+
+**返回结构要点**:`tier`、`tier_level`、`rpm_limit`、`data_daily` / `research_daily`(各含 `limit`、`used`、`remaining`)、`active_research_tasks`、`expires_at`(永久时为 `null`)与 `meta.resets_at`。它不扣 data/research 日额度，即使日额度已用完仍可自查，但仍受认证、RPM 和维护限制；不包含账号的完整用量账单。
 
 ---
 
@@ -319,7 +331,7 @@ asyncio.run(main())
 | `query` | string | 是 | — | 名称或代码片段,如 `"紫金"`、`"601899"` |
 | `limit` | int | 否 | 10 | 返回条数,合法范围 1–50;越界为参数错误 |
 
-**返回结构要点**:`matches[]`,每条含 `asset_code`、`asset_name`、`asset_class_l1`、`asset_class_l2`、`market_attribute`、`style_attribute`。排序规则:代码前缀命中 > 名称全等 > 名称短者优先。
+**返回结构要点**:`matches[]`,每条含 `asset_code`、`asset_name`、`asset_class_l1`、`asset_class_l2`、`market_attribute`、`style_attribute`。排序规则:代码前缀命中 > 名称全等 > 名称短者优先。股份类别后缀(`A/B`、`-B/-W/-SW/-S/-R`)会先被归一化; 归一后仍未命中时,可能额外返回 `did_you_mean[]`(`{asset_code, asset_name}`),调用方应用候选代码重试。
 
 **示例**:
 
@@ -398,7 +410,7 @@ components:{market, style, macro}}`,rank 越小越靠前,`percentile` 为 0–10
 | `include_history` | bool | 否 | false | 取历史打分快照;**仅在同时传了 `industry` 时生效** |
 | `include_summary` | bool | 否 | true | 传 `false` 省略 `tracking_summary` 全文,其余字段不变 |
 
-**返回结构要点**:`industries[]`,每条含 `name`、`sector`、`score`、`trends`(六个维度,值为方向符号文本:`↗` 改善 / `→` 持平 / `↘` 恶化)、`tracking_summary`(最新跟踪摘要)、`summary_as_of`;`include_history=true` 时另含 `score_history[]`(`{date, score}`)。未匹配到产业时返回 error,并在 `available_industries` 里附上**全部可选产业名**,照着改一次即可命中。
+**返回结构要点**:`industries[]`,每条含 `name`、`sector`、`score`、`trends`(六个维度,值为方向符号文本:`↗` 改善 / `→` 持平 / `↘` 恶化)、`tracking_summary`(最新跟踪摘要)、`summary_as_of`;`include_history=true` 时另含 `score_history[]`(`{date, score}`)。未匹配到产业时返回 error，`did_you_mean` 最多给 5 个相近候选；完整合法名称取自 `list_capabilities().industry_catalog`，不要依赖不存在的 `available_industries` 字段。
 
 > **⚠️ 产业名称口径**:本工具只认 ADAMAS 自建的**细分产业名**(如「光伏」「固态电池」「CXO」),**不认**申万/中信的一级行业名 —— 没有「新能源」「医药生物」「电力设备」这类。查之前先用 `list_capabilities` 的 `industry_catalog` 对齐名称。
 
@@ -445,11 +457,13 @@ components:{market, style, macro}}`,rank 越小越靠前,`percentile` 为 0–10
 
 | 名称 | 类型 | 必填 | 默认 | 说明 |
 |---|---|---|---|---|
-| `company` | string | 是 | — | 公司名或资产代码(如 `"601899.SH"`),支持模糊匹配与交易所类别后缀自动剥离(如 `"万科A"` → `"万科"`, `"美团-W"` → `"美团"`) |
+| `company` | string | 是 | — | 公司名或标准资产代码；支持全角/空白/股份后缀归一化及唯一模糊命中，多个候选需先确认 |
 | `include_content` | bool | 否 | true | 是否返回全文;false 时只返回目录 |
 | `report_date` | string | 否 | 最新一期 | 取历史期全文(`YYYY-MM-DD`,从 `history` 目录中选;传错会返回可选日期表) |
 
-**返回结构要点**:`company`、`latest_report_date`、`history[]`(`{report_date, company}`)、`content`(最新一期全文 markdown)、`meta`(note + `disclaimer`)。未找到时返回 error,并在 `did_you_mean` 里给出相近的公司名(按输入前两字宽松匹配);若模糊命中多家公司(如输入 `"中国"`),返回 `matched_by: "ambiguous"` 与 `alternatives` 候选列表以供准确选择。报告存储暂不可用时 `content` 为空串并附 `content_error` 说明(目录仍可用)。
+**返回结构要点**:`company`、`latest_report_date`、`report_date`(所选期)、`history[]`(`{report_date, company}`)、`content`(所选期正文 markdown)、`meta`(note + `disclaimer`)。精确公司名优先；唯一模糊结果可命中，多个候选时返回 error、`matched_by:"ambiguous"` 与最多 10 个 `alternatives`，必须确认准确公司名后重查，不会自动选择第一家。未找到时可用 `did_you_mean` 修正输入；`%` / `_` 按字面查询，不是通配符。
+
+`meta.content_status` 区分 `omitted`(未请求全文)、`complete`、`truncated` 与 `unavailable`。成功读取还带 `content_truncated`、`content_chars_returned`、`content_bytes_original`(上游未提供时为 null)和 `content_byte_limit`。默认读取上限 4MiB **字节**；`truncated` 仍是成功交付的部分正文，不能声称读完全文。`unavailable` 时保留目录、`content:""` 与旧 `content_error`，同时返回工具错误；存储配置缺失为 `error_class:"S3Misconfigured"`，取件失败为 `Upstream`。目录最多 12 期，不代表完整历史库。
 
 > **拿到一批公司时先用 `check_company_coverage` 批量筛**,不要对本工具循环单查 —— 几十个往返又慢又会撞 60 次/分钟的频率限制,而且每次都把整篇报告全文拉回来。
 
@@ -467,7 +481,9 @@ components:{market, style, macro}}`,rank 越小越靠前,`percentile` 为 0–10
   ],
   "content": "# 紫金矿业跟踪报告\n\n## 本期要点\n…(markdown 全文)",
   "meta": {
-    "note": "ADAMAS 公司跟踪体系报告;content 为最新一期全文 markdown",
+    "content_status": "complete",
+    "content_truncated": false,
+    "note": "ADAMAS 公司跟踪体系报告;content 为所选期正文 markdown",
     "disclaimer": "本内容由 ADAMAS 模型生成,仅供研究参考,不构成任何投资建议;据此操作风险自担。引用时须保留本声明。"
   }
 }
@@ -485,26 +501,25 @@ components:{market, style, macro}}`,rank 越小越靠前,`percentile` 为 0–10
 
 | 名称 | 类型 | 必填 | 默认 | 说明 |
 |---|---|---|---|---|
-| `names` | string[] | 是 | — | 公司名或资产代码列表(如 `["贵州茅台", "300750.SZ", "万科A"]`),**一次最多 100 项**(支持模糊匹配与交易所类别后缀自动剥离);超过请分批 |
+| `names` | string[] | 是 | — | 公司名或资产代码列表,**一次最多 100 个非空输入**；与全文查询共享归一化/歧义规则，超过请分批 |
 
-**返回结构要点**:`covered[]`(`{company_name 库中标准名, latest_report_date, periods 历史期数, asked_as 原始入参列表}`)、`not_covered[]`(`[{asked, asked_as}]`,代码错后缀时带 `did_you_mean`)、`ignored[]`(空白项列表)、`summary`(`{asked, unique_companies, covered, not_covered, ignored}`)、`meta.note`。取全文时请用 `covered[].company_name`(库中标准名)去调 `get_company_tracking`。
+**返回结构要点**:`covered[]`(`{company_name, latest_report_date, periods, asked_as[]}`)、`not_covered[]`(`{asked, asked_as[], did_you_mean?}`)、`ambiguous[]`(`{asked, asked_as[], matched_by:"ambiguous", alternatives[], matches_total}`)、`ignored[]`(空白输入)与 `summary`。同一规范公司只返回一条 covered，`asked_as` 保留原始输入；`summary.asked` 为非空输入数，`unique_companies` 为归一化结果组数，另有 `covered` / `not_covered` / `ambiguous` / `ignored` 计数。歧义项不计入 covered 或 not_covered；从 alternatives 确认后再查。取全文使用 `covered[].company_name`。
 
 **示例**:
 
 ```jsonc
 // 调用:check_company_coverage(names=["贵州茅台", "宁德时代", "某不存在公司XYZ"])
-// 返回(取自真实调用):
+// 返回(结构示意，日期与期数不是当前覆盖承诺):
 {
   "covered": [
-    {"company_name": "贵州茅台", "latest_report_date": "2026-08-05", "periods": 5, "asked_as": ["贵州茅台"]},
-    {"company_name": "宁德时代", "latest_report_date": "2026-08-07", "periods": 5, "asked_as": ["宁德时代"]}
+    {"asked_as": ["贵州茅台"], "company_name": "贵州茅台", "latest_report_date": "2026-08-05", "periods": 5},
+    {"asked_as": ["宁德时代"], "company_name": "宁德时代", "latest_report_date": "2026-08-07", "periods": 5}
   ],
-  "not_covered": [
-    {"asked": "某不存在公司XYZ", "asked_as": ["某不存在公司XYZ"]}
-  ],
+  "not_covered": [{"asked": "某不存在公司XYZ", "asked_as": ["某不存在公司XYZ"]}],
+  "ambiguous": [],
   "ignored": [],
-  "summary": {"asked": 3, "unique_companies": 3, "covered": 2, "not_covered": 1, "ignored": 0},
-  "meta": {"note": "入参可传公司名或资产代码(代码会先解析成公司名);已按归一化名去重。covered 里的 company_name 是库中标准名,取全文用 get_company_tracking(company=该标准名)"}
+  "summary": {"asked": 3, "unique_companies": 3, "covered": 2, "not_covered": 1, "ambiguous": 0, "ignored": 0},
+  "meta": {"note": "covered 里的 company_name 是库中的标准名,取全文请用 get_company_tracking(company=该标准名)"}
 }
 ```
 
@@ -529,11 +544,11 @@ components:{market, style, macro}}`,rank 越小越靠前,`percentile` 为 0–10
 | 名称 | 类型 | 必填 | 说明 |
 |---|---|---|---|
 | `sector` | string | 否 | 按板块过滤:`tech` / `cycle` / `consumer` / `pharma` |
-| `node` | string | 否 | 按产业名称模糊过滤,只返回命中节点及与其相连的边 |
+| `node` | string | 否 | 按产业名称字面片段匹配焦点，返回焦点及一跳相邻节点，不递归展开 |
 
 不带参数返回全量图谱(约 190 节点 / 340+ 边)。
 
-**返回结构要点**:`nodes[]`(`{node_id, name, layer, sector, score, score_source, signals}`)、`edges[]`(`{src, dst, type, strength, channel, delay_ticks, sign}`)、`counts`。其中 `signals` 为具名六维方向符号对象(`{current, expected, supply, cost, competition, export}`，取值为 `↗` 改善 / `→` 持平 / `↘` 恶化)，与 `get_industry_scores.trends` 同源同构。含 `disclaimer`。
+**返回结构要点**:`nodes[]`(`{node_id, name, layer, sector, score, score_source, signals}`)、`edges[]`(`{src, dst, type, strength, channel, delay_ticks, sign}`)、`counts`。`signals` 为 `{current, expected, supply, cost, competition, export}` 六维方向符号对象，与 `get_industry_scores.trends` 同源。`meta.matched_node_ids` 是焦点，`context_node_ids` 是补齐的一跳邻居，焦点排在前面；每条边的 src/dst 都存在于返回节点中。`sector` 是硬边界：同时限制焦点和邻居，跨板块边不返回；只有 sector 时返回该板块内的图。含 `disclaimer`。
 
 ---
 
@@ -545,9 +560,9 @@ components:{market, style, macro}}`,rank 越小越靠前,`percentile` 为 0–10
 
 ---
 
-#### `get_info_feed` — 今日市场信息流
+#### `get_info_feed` — 最新市场信息流
 
-**用途**:多源聚合后**二次加工**的当日市场要闻:每条为「重要性打分(10 分制)+ 标题 + 摘要正文」。每日北京时间早间覆盖更新,**只反映当天**。**披露口径:5 分以上**(与 ADAMAS 产品端一致;`min_score` 传低于 5 的值会被钳回下限,返回中 `min_score_applied` 为实际生效值)。典型场景:晨会准备、盘前把当天要闻扫一遍,重点看高分。
+**用途**:多源聚合后**二次加工**的最新文件摘要:每条为「重要性打分(10 分制)+ 标题 + 摘要正文」。通常每日北京时间早间更新，必须检查 `stale`，旧文件不能称为今日要闻。**披露口径:5 分以上**(与 ADAMAS 产品端一致;`min_score` 传低于 5 的值会被钳回下限,返回中 `min_score_applied` 为实际生效值)。典型场景:晨会准备、盘前核对最新高分要闻。
 
 **参数**:
 
@@ -556,7 +571,7 @@ components:{market, style, macro}}`,rank 越小越靠前,`percentile` 为 0–10
 | `limit` | int | 否 | 30 | 返回条数,合法范围 1–200;越界为参数错误 |
 | `min_score` | float | 否 | 5(披露下限) | 合法范围 0–10;可传更高只看高分(如 `8`),0–5 之间的合法值仍按披露下限 5 执行;越界为参数错误 |
 
-**返回结构要点**:`items[]`(`{score, title, body}`,按文件序)、`count`。注意:条目**不含来源链接**(口径与 ADAMAS C 端一致);当日文件尚未生成时返回空列表并附说明。含 `disclaimer`。
+**返回结构要点**:`items[]`(`{score, title, body}`,按文件序)、`count`、`min_score_applied`、`as_of`、`source_updated_at`、`stale`、`availability`、`has_more` 与 `meta.matching_count`。`as_of`(上海日期)与 `source_updated_at`(带 +08:00 时间戳)都取自文件修改时间，`meta.freshness_source="file_mtime"`；它们不能证明每条事件的发生/发布日期。文件日期早于上海今天时 `stale=true,availability="stale"`；当前文件为 `available`。文件尚未生成时是 `not_generated`，时间与 stale 为 null、空列表，不能解读为市场没有新闻。当前文件经分数筛选为空仍为 available。`has_more` 表示匹配数超过 limit，本工具没有分页游标。文件更新中或解析失败返回明确错误与退避指引。条目**不含来源链接**，含 `disclaimer`。
 
 ---
 
@@ -774,7 +789,7 @@ data 类配额(rpm/日额度),**不消耗 research 日额度**——放心轮询
 
 `done` 时的 `result` 结构:
 
-- 深度研究:`{answer(完整回答 markdown), mode, engine, evidence_count, web_evidence_count, disclaimer}`。`mode` 回显你提交的档位;`engine` 为研究引擎标识(当前为 `"agentic"`);`evidence_count` / `web_evidence_count` 在当前引擎下不透出统计,恒为 0,请勿依赖,以 `answer` 正文中的引用为准;
+- 深度研究:保留 `{answer(完整回答 markdown), mode, engine, evidence_count, web_evidence_count, disclaimer}`，新增 `query`(上游问题，可能经过改写)、`created_at`(有效带时区时间，无效时为空串)、`doc_id_mapping`、`meta` 与 `citation_note`。`mode` 回显提交模式；`engine` 当前为 `"agentic"`；两个 evidence 计数当前恒为 0，请勿据此推断证据数量。`doc_id_mapping` 形如 `{"E1":{"doc_id":"安全文档标识","t0_date":"2026-10-01"}}`，仅接受 E 正整数编号，日期未知时为空串；`meta` 可能仅含非负整数 `latency_ms`，也可能为空。映射常为空，不保证每个回答都有可追溯文档；无映射时保留正文原 E 编号，不编造标题或链接，并说明引用信息有限。危险路径、存储 URI、签名 URL 与凭据型标识不会透出；历史已完成任务也使用同一结果契约;
 - 产业链选股:选股引擎完整结果对象(产业链图谱、候选公司与排名信息)+ `disclaimer`;
 - 深度纪要:`{title, markdown, pdf_download_url, pdf_download_expires_at, disclaimer}`(见 `submit_notes_report`)。
 
@@ -797,6 +812,21 @@ data 类配额(rpm/日额度),**不消耗 research 日额度**——放心轮询
 }
 ```
 
+---
+
+#### `list_my_research_tasks` — 任务历史与回执恢复
+
+**用途**:列出当前 API key 的已落库任务摘要。提交后没有收到 task_id，先检索历史确认任务是否已接收，避免重复提交；它计入 data 日额度，不消耗 research 提交额度。
+
+| 参数 | 类型 | 默认 | 说明 |
+|---|---|---|---|
+| `limit` | int | 10 | 每页 1–50 条 |
+| `status` | string | 空串 | 不筛选，或 `pending` / `running` / `done` / `failed` |
+| `kind` | string | 空串 | 不筛选，或 `deep_research` / `notes_report` / `stock_screen` |
+| `cursor` | string | 空串 | 下一页使用上页 `next_cursor`，保持原 status / kind |
+
+**返回**:`tasks[]`(含 `task_id`、`kind`、`status`、`progress`、失败时 `error`、`error_class` 与 `created_at` / `started_at` / `finished_at`)、`count`、`has_more`、`next_cursor`(末页 null)及 `meta.note`。按创建时间与 task_id 倒序，游标绑定当前 key 和过滤条件；换 key 或条件会拒绝。历史不包含问题、研究正文或完整结果，也不主动同步上游状态；找到 task_id 后用 `get_research_task` 获取当前状态和结果。它不能恢复其他 key 的任务。
+
 ## 4. 异步任务模式(research 类完整生命周期)
 
 ```
@@ -806,7 +836,7 @@ submit_deep_research / submit_stock_screen / submit_notes_report
 get_research_task(task_id) ──► running(带 progress 阶段描述)──► 继续轮询
         │
         ├──► done   ──► result(含 disclaimer,引用原文保留)
-        └──► failed ──► error(见下表,多数情况重新提交即可)
+        └──► failed ──► error + error_class + recovery(确认终态与原因后处理)
 ```
 
 **耗时预期与轮询间隔**:
@@ -823,8 +853,9 @@ get_research_task(task_id) ──► running(带 progress 阶段描述)──►
 **实践建议**:
 
 - 提交返回中的 `next_step` 字段已给出轮询指引,agent 直接照做即可;
+- 提交回执丢失、超时或网络断开时，先用 `list_my_research_tasks` 检索已接收任务，再用 `get_research_task` 查询；网络断开不等于任务取消，也不等于已退款;
 - 等待期间不要空转:可先用 data 类工具取相关产业/标的的客观数据、起草报告框架(预置 prompts 即按此编排,见第 7 节);
-- 任务有 **1 小时兜底 TTL**:若服务在任务运行中重启,遗留任务会在超时后被判为 `failed`(错误信息为「任务超时未完成(服务可能重启过),请重新提交」),重新提交即可;
+- 任务有 **1 小时兜底 TTL**:若服务在任务运行中重启，遗留任务会在超时后被判为 `failed`。先确认已落库终态与 `recovery`，决定再次生成时才重新提交；这会创建新任务并正常消耗提交额度;
 - 轮询到 `done` / `failed` 后状态即为终态,结果已落库,可重复查询;
 - `task_id` 与 API key 绑定,换 key 查不到。
 
@@ -855,8 +886,7 @@ research 三个提交工具(`submit_deep_research` / `submit_stock_screen` /
   ——data 类工具不受此限制,可照常使用;
 - **`submit_deep_research` 选 `mode="pro"` 时用量按 2 倍计**(与网页端知识库的 Pro 单次问答模式一致，不是订阅档位),
   其余档位(`auto`/`flash`/`plus`)按 1 倍;
-- **任务失败会自动退回本次用量**:上游报错、超时判死、你主动断开都会退,
-  不必为失败的任务重复付出额度。**成功产出的任务不退**——包括你觉得结果不理想的情况;
+- **已确认失败的任务会按服务端结算逻辑退回本次用量**；客户端断开本身不代表任务失败或退款，恢复 task_id 后查询终态。**成功产出的任务不退**——包括你觉得结果不理想的情况;
 - 账号额度用尽时返回 `error: "今日使用已达上限，请联系工作人员"`,
   与 key 日额度是两套独立限制,任一撞上都会被拒;
 - 计费服务短暂不可用时 research 类工具会**拒绝提交**(返回
@@ -865,11 +895,11 @@ research 三个提交工具(`submit_deep_research` / `submit_stock_screen` /
 
 说明:
 
-- **每个 key 同时只允许 1 个 research 任务在跑**(单 key 并发保护)。未完成前重复提交会直接返回退避 60 秒;
+- **每个 key 同时只允许 1 个 research 任务在跑**；未完成前重复提交会直接返回退避 60 秒。
 - research 日额度只在**提交**时消耗;`get_research_task` 轮询走 data 类配额;
-- research 全局并发闸是服务级保护(受上游算力约束),与你的用量无关也可能撞到——把「提交失败 + 按 `retry_after_seconds` 重试」做进你的任务队列逻辑;
+- research 全局并发闸是服务级保护(受上游算力约束)，与你的用量无关也可能撞到；队列按 `recovery` 处理。提交结果不明先查历史，不把所有失败都当成可安全重试;
 - **频率(rpm)按每个 HTTP 请求计**,包含 `initialize`、`tools/list`、`prompts/*`、`ping` 等协议请求,不只是工具调用。超限返回 **HTTP 429**(带 `Retry-After` 头);
-- **日额度按工具调用计**,超限以工具返回中的 `error` + `retry_after_seconds` 呈现(MCP 调用本身成功)。`retry_after_seconds` 给的是**到次日 0 点(北京时间)的秒数**——那才是额度真正重置的时刻,按它退避,不要每小时空试;
+- **日额度按工具调用计**，`get_my_quota` 豁免日扣减；超限以工具返回的 `error` / `error_class` / `recovery` / `retry_after_seconds` 呈现，MCP `isError=true`。日额度的等待时间是**到次日 0 点(北京时间)的秒数**，不要每小时空试;
 - **日额度落库,服务重启/更新不会重置**;并发超限同样按 `retry_after_seconds` 退避,密集重试只会持续消耗 rpm;
 - 服务对已解析的 `tools/call` 只做 best-effort 单次计量写入尝试;计量失败不影响
   主请求,不保证持久化或 exactly-once。成功写入的用量按 key 查看,如需提额请联系 ADAMAS。
@@ -941,26 +971,26 @@ Bearer 连接，删除旧连接后按 2.3 节的 OAuth 命令重新添加，再�
 服务端开启了 DNS-rebinding 保护,只接受 Host 白名单内的请求(`www.adamas-research.com` 等)。直连官方端点不会遇到此问题;若你在自建网关/反向代理后面转发请求,必须**透传原始 Host 头**(如 nginx `proxy_set_header Host www.adamas-research.com;`),或联系 ADAMAS 把你的域名加入白名单。
 
 **Q:返回里带 `error` 和 `retry_after_seconds`(额度/并发超限)?**
-这是结构化的业务失败信号:`CallToolResult.isError=true`,内容中保留 `error` 和退避时间;它不是 HTTP/传输故障。按 `retry_after_seconds` 的秒数等待后重试;把它做进你的重试逻辑,不要密集重试。日额度类的 `retry_after_seconds` 指向**次日 0 点(北京时间)**的剩余秒数,当日不必再试。
+这是结构化的业务失败信号:`CallToolResult.isError=true`，内容保留 `error` 并新增 `error_class` / `recovery`。先按 recovery 判断是改输入、检查额度/权限、查任务历史还是等待；只有 `retry_safe=true` 才自动重放。日额度类等待时间指向**次日 0 点(北京时间)**，当日不必再试。
 
 **Q:收到 HTTP 429?**
 频率超限(每分钟调用数)走 HTTP 429,响应带标准 `Retry-After` 头和 `retry_after_seconds` 字段,按其中任一等待后重试即可。注意频率是按**每个 HTTP 请求**计的,连接握手、列工具等协议请求也计入。
 
 **Q:任务 `failed`,错误是「任务超时未完成(服务可能重启过),请重新提交」?**
-服务滚动更新/重启会中断在跑任务,遗留任务超过 1 小时 TTL 后自动判 failed。重新提交同样的问题即可,重新提交会正常消耗一次 research 额度。
+服务滚动更新/重启后，遗留任务超过 1 小时 TTL 可能被判 failed。先查询该 task_id 确认终态、错误与恢复指引，决定再次生成时才重新提交；这会正常消耗一次 research 提交额度。
 
 **Q:调用工具时返回「服务即将更新维护,暂停接收新任务,请几分钟后重试」?**
 服务处于更新窗口(排空中),会暂停所有新工具调用,已接纳的调用会继续跑完。
 按返回的 `retry_after_seconds`(300 秒)稍后重试即可。
 
 **Q:研究结果里 `evidence_count` 是 0?**
-正常。evidence 计数在当前引擎(`engine: "agentic"`)下不透出统计,以 `answer` 正文中的引用为准;`mode` 回显你提交的档位。
+正常。当前引擎(`engine: "agentic"`)不透出 evidence 统计；检查正文及 `citation_note` / `doc_id_mapping`。映射可能为空，无映射不得编造文档标题或链接；`mode` 回显提交模式。
 
 **Q:轮询 `get_research_task` 返回「引擎状态暂不可查,请稍后再试」?**
 研究引擎瞬时不可达,任务本身仍在跑,状态显示为 running。按正常间隔继续轮询即可;若持续超过任务耗时预期上限,参考 TTL 条目处理。
 
 **Q:`get_company_tracking` 返回了目录但 `content` 为空、带 `content_error`?**
-报告全文存储瞬时不可用,目录不受影响。稍后重试;持续失败请联系 ADAMAS。
+`meta.content_status="unavailable"` 表示全文未交付，目录可继续使用；这是 `isError=true` 的部分结果。检查 `error_class` 与 `recovery`：`S3Misconfigured` 需联系支持修复配置，临时 `Upstream` 按指引等待。`truncated` 则表示只交付了部分正文，不能当成全文。
 
 **Q:交易日下午调用,行情相关 `as_of` 还是昨天?**
 正常现象:行情为盘后 16–17 点人工导入(见第 6 节),当天数据在晚间前可能尚未就绪。以 `freshness` / `as_of` 为准。
