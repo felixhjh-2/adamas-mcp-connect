@@ -533,6 +533,8 @@ components:{market, style, macro}}`,rank 越小越靠前,`percentile` 为 0–10
 
 **返回结构要点**:`industries[]`,每条含 `name`、`sector`、`tracking_report_pdf_url`(边际跟踪报告)、`full_report_pdf_url`(完整报告)、`updated_at`。**下载链接 10 分钟有效**,过期重新调用即可;无报告的产业带 `note` 说明。含 `disclaimer`。
 
+`meta.download_links_status` 表示本次下载链接的签名生成状态：`complete` 全部已提供的报告链接生成成功、`partial` 部分成功、`unavailable` 已登记报告但链接均生成失败、`not_provided` 未提供报告文件。它不证明文件存在或下载成功。生成失败时仍保留报告信息及已成功链接，并返回顶层 `error`、`error_class`（MCP `isError=true`）；已有成功链接可继续使用，不能把链接暂不可用说成“暂无报告”。
+
 ---
 
 #### `get_industry_graph` — 产业关联图谱
@@ -557,6 +559,8 @@ components:{market, style, macro}}`,rank 越小越靠前,`percentile` 为 0–10
 **用途**:按策略主题的沙盘推演报告 PDF 下载链接(10 分钟有效)。
 
 **参数**:无。**返回**:`strategy_reports[]`(`{strategy, pdf_url, updated_at}`)、`meta`。含 `disclaimer`。
+
+`meta.download_links_status` 同上：`complete` / `partial` / `unavailable` / `not_provided` 仅说明签名链接生成状态，不证明文件存在或下载成功。失败响应仍保留 `strategy_reports` 与已成功的 `pdf_url`，同时返回顶层 `error`、`error_class`（MCP `isError=true`）；不要把链接生成失败解读为没有报告。
 
 ---
 
