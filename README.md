@@ -177,6 +177,8 @@ ADAMAS_API_KEY=<your-api-key> python examples/quickstart.py
 
 首次会话先查能力地图，批量调用或提交研究前用 `get_my_quota` 自查；它免日额度扣减，仍受请求频率限制。
 研究提交回执丢失时，先用 `list_my_research_tasks` 找回 task_id，再轮询。
+付费三个提交工具候选新增可选 `idem_key`（≤128 个 ASCII 字符，`[A-Za-z0-9][A-Za-z0-9_.:-]*`）：同一 key、同一工具内同键同完整业务参数返回原任务，不重复扣本次账号用量。深研 `session_id` 也必须一致；同键换参为 `BadParam`。无键仍每次 RPC 新建意图，明确新业务才换键，新键不等于恢复原任务。
+回执新增 `idempotency_persisted`，可能带 `progress` / `task_status`；这不证明研究引擎已受理。状态未知只查历史/轮询，不能盲目重投或推断已退款。
 历史按 `has_more` / `next_cursor` 翻页，保留原 status / kind；历史是落库摘要，当前状态与结果用轮询工具获取。
 工具错误先读 `error_class` 与 `recovery`，仅 `retry_safe=true` 时自动重放，不盲目重复付费提交。
 

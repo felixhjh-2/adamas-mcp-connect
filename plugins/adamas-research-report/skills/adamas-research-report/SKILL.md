@@ -46,10 +46,11 @@ description: 用 ADAMAS 投研数据写专业研究报告/晨会纪要/行业跟
      `submit_notes_report`(深度纪要成稿,异步)。
      提交后按返回的 `next_step` 轮询 `get_research_task`,等待期间先取客观数据并起草框架;
      ⚠️ 这三个会**消耗所属账号的使用额度**(客观数据类不消耗):
-     · 同一个问题不要反复提交 —— 失败会自动退回,但成功产出的不退,即使你对结果不满意;
+     · 同一个业务不要反复提交；确认失败后按服务端结算结果处理，状态未知不代表失败或已退款，成功产出的不退;
      · `submit_deep_research` 选 `mode="pro"` 用量按 2 倍计,按需要选档而不是默认拉满;
      · 若返回"该 API key 未绑定用户",说明这把 key 还没绑账号,联系 ADAMAS 处理,重试无用。
 4. **额度与恢复先自查**:批量调用或提交前用 `get_my_quota`(免日扣减，仍计 RPM)；提交回执丢失先用 `list_my_research_tasks` 恢复 task_id，再轮询，不能直接重复付费提交。历史支持 limit/status/kind/cursor，翻页保留原筛选；只读落库摘要，不代表上游最新状态。
+   三个付费提交工具候选支持可选 `idem_key`：非空须 ≤128 个 ASCII 字符，匹配 `[A-Za-z0-9][A-Za-z0-9_.:-]*`。同一 API key、同一工具内，同键与完整业务参数一致时返回原任务、不重复扣本次账号用量；深研 `session_id` 也纳入业务参数。换参冲突为 `BadParam`，新业务用新键；新键不等于恢复原任务。无键兼容每次 RPC 新建意图，丢回执仍先历史。`idempotency_persisted:true` 表示提交意图已记录，受理可能待确认；此时只查历史/轮询，不盲重投，不推断已退款。按可选 `task_status` 与 `progress` 查看原任务提示，当前结果仍用轮询获取。
 5. **错误按恢复指引处理**:检查 `isError`、`error_class` 与 `recovery.action`，仅 `retry_safe=true` 才自动重放；按可选 `retry_after_seconds` 等待，不盲重试。
 
 ## 成文规范(必须遵守)

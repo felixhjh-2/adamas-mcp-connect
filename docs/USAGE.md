@@ -696,6 +696,12 @@ components:{market, style, macro}}`,rank 越小越靠前,`percentile` 为 0–10
 
 research 类与 data 类的契约区别:**结果含模型生成的分析观点**;走独立的日额度(默认每 key 每日 20 次提交)与全局并发闸;均为异步——提交秒回 `task_id`,用 `get_research_task` 轮询;结果强制附 `disclaimer`,**引用必须原文保留**。
 
+**付费提交幂等（候选，尚未发布）**：三个提交工具均新增可选 `idem_key`，为空或省略时保留每次 RPC 创建新提交意图的旧行为。非空键必须为 1–128 个 ASCII 字符，匹配 `[A-Za-z0-9][A-Za-z0-9_.:-]*`。在同一 API key、同一工具内，同键与完整业务参数一致时返回原任务，不重复扣本次账号用量；跨 key 或跨工具不能恢复原任务。深度研究的 `question`、`mode`、`session_id` 都影响业务，重放必须保持一致。追问使用同一 session_id、不同 question 时是新业务，应使用新 idem_key。
+
+同键换参返回 MCP 工具错误 `error_class="BadParam"`，不是 HTTP 409；恢复原任务须保留原键和原参数，明确提交新业务才使用新键。**新键不等于恢复原任务**。回执丢失或受理状态未知时，只查 `list_my_research_tasks` / `get_research_task`；不要盲目重投、换键或推断任务已取消、已退款。
+
+**提交回执**保留 `task_id`、`status:"running"`、`eta_hint`、`next_step`，新增 `idem_key`（回显客户键，无键为空串）与 `idempotency_persisted:true`。后者只表示提交意图已记录，不证明研究引擎已受理或执行，也不让空键跨 RPC 去重。受理待确认时可能带 `progress`，重放时可能带原任务的 `task_status`；外层 status 保留旧回执口径，任务当前状态与结果以轮询为准。失败响应若带 task_id，先查询该任务并按 `recovery` 处理；只有明确允许安全重放时才使用同一原键和完整原参数。
+
 ---
 
 #### `submit_deep_research` — 提交深度研究问题
@@ -708,17 +714,21 @@ research 类与 data 类的契约区别:**结果含模型生成的分析观点**
 |---|---|---|---|---|
 | `question` | string | 是 | — | 研究问题 |
 | `mode` | string | 否 | `"auto"` | `flash`(快,约 1–2 分钟)/ `auto`(自动,约 2–5 分钟)/ `plus`(深,约 5–10 分钟)/ `pro`(最深,约 8–12 分钟) |
+| `session_id` | string | 否 | 空串 | 追问会话，非空时 ≤64 个 ASCII 字符，匹配 `[A-Za-z0-9_.:-]+`；同一话题复用；它纳入幂等业务参数 |
+| `idem_key` | string | 否 | 空串 | 可选提交幂等键，≤128 个 ASCII 字符；同一次操作保留原键和完整业务参数，规则见上文 |
 
 **返回结构要点**(提交成功):`task_id`、`status: "running"`、`eta_hint`(耗时预期)、`next_step`(轮询指引)。可能的错误:mode 非法;并发已满(`retry_after_seconds: 120`);服务维护窗口暂停接单(`retry_after_seconds: 300`);研究引擎暂不可用。
 
 **示例**:
 
 ```jsonc
-// 调用:submit_deep_research(question="存储芯片本轮涨价周期还能持续多久?驱动因素是什么?", mode="plus")
+// 调用:submit_deep_research(question="存储芯片本轮涨价周期还能持续多久?驱动因素是什么?", mode="plus", idem_key="storage-cycle-01")
 // 返回:
 {
   "task_id": "6f9c1e2a-…",
   "status": "running",
+  "idem_key": "storage-cycle-01",
+  "idempotency_persisted": true,
   "eta_hint": "约 5-10 分钟",
   "next_step": "用 get_research_task(task_id='6f9c1e2a-…') 轮询结果,建议间隔 ≥30 秒"
 }
@@ -736,6 +746,7 @@ research 类与 data 类的契约区别:**结果含模型生成的分析观点**
 | 名称 | 类型 | 必填 | 默认 | 说明 |
 |---|---|---|---|---|
 | `industry_chain` | string | 是 | — | 产业链名称,1–200 字,如 `"存储芯片"`、`"光伏"` |
+| `idem_key` | string | 否 | 空串 | 可选提交幂等键，≤128 个 ASCII 字符；同一次操作保留原键和 industry_chain，规则见上文 |
 
 **返回结构要点**(提交成功):`task_id`、`status: "running"`、
 `eta_hint: "约 3-8 分钟"`、`next_step`(建议轮询间隔 ≥60 秒)。选股全局同一时刻
@@ -743,15 +754,17 @@ research 类与 data 类的契约区别:**结果含模型生成的分析观点**
 
 `done` 时 `result` 为选股引擎的完整结果对象,包含产业链图谱、候选公司与排名信息,
 并带 `disclaimer`。本工具消耗 research 类 key 日额度及绑定账号的使用额度;
-任务失败会自动退回本次账号用量,成功交付后不退。
+确认失败后按服务端结算结果处理本次账号用量，成功交付后不退；受理状态未知不等于失败或已退款。
 
 **示例**:
 
 ```jsonc
-// 调用:submit_stock_screen(industry_chain="存储芯片")
+// 调用:submit_stock_screen(industry_chain="存储芯片", idem_key="storage-screen-01")
 {
   "task_id": "a31b7c90-…",
   "status": "running",
+  "idem_key": "storage-screen-01",
+  "idempotency_persisted": true,
   "eta_hint": "约 3-8 分钟",
   "next_step": "用 get_research_task(task_id='a31b7c90-…') 轮询结果,建议间隔 ≥60 秒"
 }
@@ -763,7 +776,12 @@ research 类与 data 类的契约区别:**结果含模型生成的分析观点**
 
 **用途**:深度纪要报告生成:多视角检索 + 深度推理 + 成稿(正文数千字,同时产出 PDF)。`topic` 既可以是研究主题(如「英伟达 GTC 大会要点」),也可以是一段会议/调研原始记录(≤2000 字)。
 
-**参数**:`topic`(必填,1-2000 字)。
+**参数**:
+
+| 名称 | 类型 | 必填 | 默认 | 说明 |
+|---|---|---|---|---|
+| `topic` | string | 是 | — | 研究主题或会议原始记录，1–2000 字 |
+| `idem_key` | string | 否 | 空串 | 可选提交幂等键，≤128 个 ASCII 字符；同一次操作保留原键和 topic，规则见上文 |
 
 **返回结构要点**(提交成功):`task_id`、`status: "running"`、`eta_hint: "约 8-15 分钟"`、`next_step`(建议轮询间隔 ≥60 秒)。纪要生成全局同一时刻只跑 1 个,并发已满返回 error + `retry_after_seconds: 300`。
 
@@ -835,7 +853,7 @@ data 类配额(rpm/日额度),**不消耗 research 日额度**——放心轮询
 
 ```
 submit_deep_research / submit_stock_screen / submit_notes_report
-        │  秒级返回 task_id(此时任务已在服务端运行)
+        │  秒级返回原任务回执 task_id(受理状态可能待确认)
         ▼
 get_research_task(task_id) ──► running(带 progress 阶段描述)──► 继续轮询
         │
@@ -857,9 +875,9 @@ get_research_task(task_id) ──► running(带 progress 阶段描述)──►
 **实践建议**:
 
 - 提交返回中的 `next_step` 字段已给出轮询指引,agent 直接照做即可;
-- 提交回执丢失、超时或网络断开时，先用 `list_my_research_tasks` 检索已接收任务，再用 `get_research_task` 查询；网络断开不等于任务取消，也不等于已退款;
+- 提交回执丢失、超时、网络断开或 progress 提示受理待确认时，只用 `list_my_research_tasks` / `get_research_task` 恢复并查询原任务；网络断开不等于任务取消，也不等于已退款。保留原 idem_key 与完整参数，不盲重投；无键调用每次 RPC 都是新意图;
 - 等待期间不要空转:可先用 data 类工具取相关产业/标的的客观数据、起草报告框架(预置 prompts 即按此编排,见第 7 节);
-- 任务有 **1 小时兜底 TTL**:若服务在任务运行中重启，遗留任务会在超时后被判为 `failed`。先确认已落库终态与 `recovery`，决定再次生成时才重新提交；这会创建新任务并正常消耗提交额度;
+- 任务可能触发超时结算；以已落库终态与 `recovery` 为准，受理未知时不自行判死或重新生成。明确决定再次生成时使用新 idem_key；这是新任务，会正常消耗提交额度;
 - 轮询到 `done` / `failed` 后状态即为终态,结果已落库,可重复查询;
 - `task_id` 与 API key 绑定,换 key 查不到。
 
@@ -883,7 +901,7 @@ get_research_task(task_id) ──► running(带 progress 阶段描述)──►
 research 三个提交工具(`submit_deep_research` / `submit_stock_screen` /
 `submit_notes_report`)
 除上表的 key 日额度外,**还消耗 API key 所绑定账号的使用额度**,与该账号在网页端
-的用量算在一起。这三个工具每次调用都会真实运行对应的研究或选股流程,因此:
+的用量算在一起。新业务会运行对应的研究或选股流程；同键同参重放返回原任务，不重复扣本次账号用量。因此:
 
 - **API key 必须绑定账号**才能调用 research 类工具。未绑定时返回
   `error: "该 API key 未绑定用户,无法使用研究类工具;请联系 ADAMAS 为 key 绑定账号"`
@@ -895,7 +913,7 @@ research 三个提交工具(`submit_deep_research` / `submit_stock_screen` /
   与 key 日额度是两套独立限制,任一撞上都会被拒;
 - 计费服务短暂不可用时 research 类工具会**拒绝提交**(返回
   `error: "计费服务暂时不可用,请稍后重试"` + `retry_after_seconds`),
-  而不是免费放行——按 `retry_after_seconds` 退避即可。
+  而不是免费放行；等待不等于安全重放授权，按 `recovery` 处理，结果未知先查原任务。
 
 说明:
 

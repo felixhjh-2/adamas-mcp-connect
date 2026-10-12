@@ -421,8 +421,17 @@ def main() -> None:
                        "recovery", "retry_safe", "content_status", "stale", "doc_id_mapping"):
             require(marker in document, f"候选契约缺 {marker}")
     for marker in ("next_cursor", "has_more", "file_mtime", "source_updated_at",
-                   "matched_node_ids", "context_node_ids", "ambiguous", "citation_note"):
+                   "matched_node_ids", "context_node_ids", "ambiguous", "citation_note",
+                   "download_links_status", "idempotency_persisted", "task_status",
+                   "[A-Za-z0-9][A-Za-z0-9_.:-]*", "新键不等于恢复原任务"):
         require(marker in usage, f"候选使用文档缺 {marker}")
+    for tool in ("submit_deep_research", "submit_stock_screen", "submit_notes_report"):
+        section = usage.split(f"#### `{tool}`", 1)[1].split("\n#### `", 1)[0]
+        require("| `idem_key` | string | 否 | 空串 |" in section,
+                f"付费提交缺可选幂等参数: {tool}")
+    for document in (readme, skill):
+        for marker in ("idem_key", "idempotency_persisted", "session_id", "BadParam"):
+            require(marker in document, f"候选付费恢复说明缺 {marker}")
     verify_boundary_self_checks()
     verify_public_boundary()
 
