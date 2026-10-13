@@ -719,6 +719,8 @@ research 类与 data 类的契约区别:**结果含模型生成的分析观点**
 | `session_id` | string | 否 | 空串 | 追问会话，非空时 ≤64 个 ASCII 字符，匹配 `[A-Za-z0-9_.:-]+`；同一话题复用；它纳入幂等业务参数 |
 | `idem_key` | string | 否 | 空串 | 可选提交幂等键，≤128 个 ASCII 字符；同一次操作保留原键和完整业务参数，规则见上文 |
 
+**会话隔离**：新提交的命名会话按当前 key 与绑定账号隔离。本次归属修正后，新提交不会自动接续升级前同名会话的上下文；需要延续时请在问题中补充必要背景。已受理任务仍按原 UUID、恢复键和完整原参数恢复，不改写其已保存请求。
+
 **返回结构要点**(提交成功):`task_id`、`status: "running"`、`eta_hint`(耗时预期)、`next_step`(轮询指引)。可能的错误:mode 非法;并发已满(`retry_after_seconds: 120`);服务维护窗口暂停接单(`retry_after_seconds: 300`);研究引擎暂不可用。
 
 **示例**:
@@ -794,7 +796,7 @@ research 类与 data 类的契约区别:**结果含模型生成的分析观点**
 #### `get_research_task` — 轮询异步任务
 
 **用途**:查询 `submit_deep_research` / `submit_stock_screen` / `submit_notes_report`
-提交的任务状态与结果。**只能查询当前 API key 自己提交的任务**。此调用计入
+提交的任务状态与结果。**只能查询当前 API key 自己提交的任务；持久付费任务还须匹配提交时的绑定账号**。修改绑定不转让历史；更换账号应联系服务方撤销旧 key 并重新发 key。此调用计入
 data 类配额(rpm/日额度),**不消耗 research 日额度**——放心轮询,但请遵守建议间隔。
 
 **参数**:
@@ -853,7 +855,7 @@ data 类配额(rpm/日额度),**不消耗 research 日额度**——放心轮询
 
 不筛选时省略 `status` / `kind` 或传 `null`，不要传空字符串；`cursor` 的默认值仍为空字符串。
 
-**返回**:`tasks[]`(含 `task_id`、`kind`、`status`、`progress`、失败时 `error`、`error_class` 与 `created_at` / `started_at` / `finished_at`)、`count`、`has_more`、`next_cursor`(末页 null)及 `meta.note`。按创建时间与 task_id 倒序，游标绑定当前 key 和过滤条件；换 key 或条件会拒绝。历史不包含问题、研究正文或完整结果，也不主动同步上游状态；找到 task_id 后用 `get_research_task` 获取当前状态和结果。它不能恢复其他 key 的任务。
+**返回**:`tasks[]`(含 `task_id`、`kind`、`status`、`progress`、失败时 `error`、`error_class` 与 `created_at` / `started_at` / `finished_at`)、`count`、`has_more`、`next_cursor`(末页 null)及 `meta.note`。按创建时间与 task_id 倒序，游标绑定当前 key、绑定账号和过滤条件；换 key、账号或条件会拒绝。旧版本游标失效时省略 cursor 从第一页重新获取。历史不包含问题、研究正文或完整结果，也不主动同步上游状态；找到 task_id 后用 `get_research_task` 获取当前状态和结果。它不能恢复其他 key 的任务。
 
 ## 4. 异步任务模式(research 类完整生命周期)
 
