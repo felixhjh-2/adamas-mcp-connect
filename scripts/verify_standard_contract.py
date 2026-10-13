@@ -76,15 +76,16 @@ FORBIDDEN_PUBLIC_IDENTIFIER_DIGESTS = {
 
 
 # Generic credential/contact/path checks avoid embedding any real secret or host.
+# These token grammars are ASCII; adjacent Chinese prose must be a boundary.
 PUBLIC_CONTENT_PATTERNS = (
     re.compile("内" + "部" + "|" + "组" + "合" + "|" + "长" + "周期" + "方向"),
-    re.compile(r"\badamas_[A-Za-z0-9_-]{24,}\b"),
-    re.compile(r"\b(?:AKIA|ASIA)[A-Z0-9]{16}\b"),
-    re.compile(r"\b[A-Za-z0-9._%+-]+@(?!users\.noreply\.github\.com\b)[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"),
+    re.compile(r"\badamas_[A-Za-z0-9_-]{24,}\b", re.ASCII),
+    re.compile(r"\b(?:AKIA|ASIA)[A-Z0-9]{16}\b", re.ASCII),
+    re.compile(r"\b[A-Za-z0-9._%+-]+@(?!users\.noreply\.github\.com\b)[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b", re.ASCII),
     re.compile(r"/" + r"Users/[^\s`]+"),
     re.compile(r"(?:postgres(?:ql)?|mysql|redis)://[^\s`]+", re.I),
 )
-IPV4_LITERAL = re.compile(r"(?<![\w.])(?:\d{1,3}\.){3}\d{1,3}(?![\w.])")
+IPV4_LITERAL = re.compile(r"(?<![\w.])(?:\d{1,3}\.){3}\d{1,3}(?![\w.])", re.ASCII)
 
 
 def content_leaks(line: str) -> bool:
@@ -107,6 +108,9 @@ def require(condition: bool, message: str) -> None:
 
 
 def verify_boundary_self_checks() -> None:
+    from types import SimpleNamespace
+    from unittest.mock import patch
+
     probes = (
         "内" + "部", "组" + "合", "长" + "周期" + "方向",
         "probe" + "@" + "example.invalid",
@@ -119,6 +123,55 @@ def verify_boundary_self_checks() -> None:
         require(content_leaks(probe), f"公开边界负例未被拒绝: {index}")
     require(not content_leaks("http://127.0.0.1:9200/mcp"), "误拦客户端 loopback")
     require(not content_leaks("probe@users.noreply.github.com"), "误拦 GitHub noreply")
+
+    contexts = (("", ""), ("中文", ""), ("", "中文"), ("前文", "后文"),
+                ("（", "），"), ("prefix=", "; suffix"))
+    api_key = "adamas_" + "x" * 32
+    aws_ids = ("AKIA" + "A" * 16, "ASIA" + "B" * 16)
+    email = "probe" + "@" + "example.invalid"
+    public_ip = "203" + ".0.113.42"
+    for token_index, token in enumerate((api_key, *aws_ids, email, public_ip)):
+        for context_index, (left, right) in enumerate(contexts):
+            require(content_leaks(left + token + right),
+                    f"ASCII 敏感 token 邻接漏检: {token_index}/{context_index}")
+    for allowed in ("http://127.0.0.1:9200/mcp", "probe" + "@" + "users.noreply.github.com"):
+        for left, right in contexts:
+            require(not content_leaks(left + allowed + right), "误拦允许 token 邻接")
+
+    non_tokens = (
+        "x" + api_key, "_" + api_key, "adamas_" + "x" * 23,
+        *(prefix + token for token in aws_ids for prefix in ("x", "0", "_")),
+        *(token + suffix for token in aws_ids for suffix in ("x", "0", "_")),
+        "AKIA" + "A" * 15, "ASIA" + "B" * 17,
+        email + "9", email + "_", "probe" + "@" + "localhost",
+        *(prefix + public_ip for prefix in ("x", "_", "1.")),
+        *(public_ip + suffix for suffix in ("x", "_", ".1")),
+        "999" + ".0.113.42",
+    )
+    for index, token in enumerate(non_tokens):
+        require(not content_leaks(token), f"误把 ASCII 非 token 当成敏感值: {index}")
+    # A legal suffix extends these variable-length tokens instead of invalidating them.
+    require(content_leaks(api_key + "x_"), "漏检带合法后缀的 API token")
+    require(content_leaks("x" + email), "漏检扩展本地名的邮件 token")
+
+    # Exercise the actual tracked-file scanner with a synthetic digest, never a private name.
+    identifier = "synthetic_boundary_identifier"
+    def scanner_rejects_identifier(line: str) -> bool:
+        with (
+            patch.dict(globals(), FORBIDDEN_PUBLIC_IDENTIFIER_DIGESTS={sha256(identifier.encode()).hexdigest()}),
+            patch.object(subprocess, "run", return_value=SimpleNamespace(stdout="boundary-probe.md\0")),
+            patch.object(Path, "read_text", return_value=line),
+        ):
+            try:
+                verify_public_boundary()
+            except SystemExit:
+                return True
+        return False
+
+    for left, right in contexts:
+        require(scanner_rejects_identifier(left + identifier + right), "受限 ASCII 标识邻接漏检")
+    for token in ("x" + identifier, "_" + identifier, identifier + "x", identifier + "_"):
+        require(not scanner_rejects_identifier(token), "误拦扩展 ASCII 标识")
 
 
 def verify_public_boundary() -> None:
@@ -136,7 +189,7 @@ def verify_public_boundary() -> None:
         except UnicodeDecodeError:
             continue
         for line_number, line in enumerate(lines):
-            identifiers = re.findall(r"\b[a-z][a-z0-9_]{2,}\b", line.lower())
+            identifiers = re.findall(r"\b[a-z][a-z0-9_]{2,}\b", line.lower(), re.ASCII)
             if any(
                 sha256(identifier.encode()).hexdigest()
                 in FORBIDDEN_PUBLIC_IDENTIFIER_DIGESTS
