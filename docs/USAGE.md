@@ -1,6 +1,6 @@
 # ADAMAS MCP 使用文档
 
-> **候选契约(2026-10-12，尚未发布)**:生产端点可能仍运行旧版；当前可用工具与参数以 `tools/list`、`prompts/list` 和 `list_capabilities().service` 为准。
+> **正式发布（2.4.0，2026-10-13）**：当前可用工具与参数以 `tools/list`、`prompts/list` 和 `list_capabilities().service` 为准。
 
 > 面向外部集成方。读完本文即可把 ADAMAS 投研能力接进你自己的 agent / IDE / 办公工具。
 
@@ -262,7 +262,7 @@ asyncio.run(main())
 
 通用约定:
 
-- 所有工具返回 JSON dict。业务层错误(参数错误、未找到、配额超限等)保留 `error` 并把 MCP `CallToolResult.isError` 标为 `true`；候选版本新增 `error_class` 与 `recovery:{action,retry_safe,...}`，可退避错误还带 `retry_after_seconds`。SDK 通常仍会返回 `CallToolResult`，agent 应同时处理 `isError` 与 JSON 中的 `error`，不能只看 HTTP 200;
+- 所有工具返回 JSON dict。业务层错误(参数错误、未找到、配额超限等)保留 `error` 并把 MCP `CallToolResult.isError` 标为 `true`；本版本返回 `error_class` 与 `recovery:{action,retry_safe,...}`，可退避错误还带 `retry_after_seconds`。SDK 通常仍会返回 `CallToolResult`，agent 应同时处理 `isError` 与 JSON 中的 `error`，不能只看 HTTP 200;
 - `recovery.action` 可能为 `revise_input`(修改参数)、`stop`(停止)、`check_access`(检查权限)、`check_quota`(检查额度)、`wait`(等待)、`check_task_history`(先恢复任务)或 `contact_support`(联系支持)。仅在 `retry_safe=true` 时自动重放；付费研究提交结果不明时先查 `list_my_research_tasks`，不要直接重复提交。`retry_after_seconds` 是等待指引，不单独代表可以安全重放;
 - 数据类返回的 `meta` 解释口径，观点相关的还含 `disclaimer`；数值使用自身 `as_of`，不要拿查询时间补齐缺失的数据日期。目录/状态响应不一定包含数值截止日;
 - 日期输入使用 `YYYY-MM-DD`；时间戳字段可能带时区，例如产业 `summary_as_of`、任务时间与信息流 `source_updated_at`。信息流 `as_of` 是文件修改日期，不是每条事件发布日期。
@@ -696,11 +696,11 @@ components:{market, style, macro}}`,rank 越小越靠前,`percentile` 为 0–10
 
 research 类与 data 类的契约区别:**结果含模型生成的分析观点**;走独立的日额度(默认每 key 每日 20 次提交)与全局并发闸;均为异步——提交秒回 `task_id`,用 `get_research_task` 轮询;结果强制附 `disclaimer`,**引用必须原文保留**。
 
-**付费提交幂等（候选，尚未发布）**：三个提交工具均新增可选 `idem_key`，为空或省略时保留每次 RPC 创建新提交意图的旧行为。非空键必须为 1–128 个 ASCII 字符，匹配 `[A-Za-z0-9][A-Za-z0-9_.:-]*`。在同一 API key、同一工具内，同键与完整业务参数一致时返回原任务，不重复扣本次账号用量；跨 key 或跨工具不能恢复原任务。深度研究的 `question`、`mode`、`session_id` 都影响业务，重放必须保持一致。追问使用同一 session_id、不同 question 时是新业务，应使用新 idem_key。
+**付费提交幂等**：三个提交工具均新增可选 `idem_key`，为空或省略时保留每次 RPC 创建新提交意图的旧行为。非空键必须为 1–128 个 ASCII 字符，匹配 `[A-Za-z0-9][A-Za-z0-9_.:-]*`。在同一 API key、同一工具内，同键与完整业务参数一致时返回原任务，不重复扣本次账号用量；跨 key 或跨工具不能恢复原任务。深度研究的 `question`、`mode`、`session_id` 都影响业务，重放必须保持一致。追问使用同一 session_id、不同 question 时是新业务，应使用新 idem_key。
 
 同键换参返回 MCP 工具错误 `error_class="BadParam"`，不是 HTTP 409；恢复原任务须保留原键和原参数，明确提交新业务才使用新键。**新键不等于恢复原任务**。回执丢失或受理状态未知时，先用 `list_my_research_tasks` 找回 task_id，再用 `get_research_task` 查询原任务；不要盲目重投、换键或推断任务已取消、已退款。
 
-**提交回执**保留 `task_id`、`status:"running"`、`eta_hint`、`next_step`，新增 `idem_key` 与 `idempotency_persisted:true`。显式传键时回显原键；为空或省略时返回为本次意图生成的 `auto:<UUIDhex>` 恢复键。本候选创建的付费任务在 `get_research_task` 中也返回该恢复键。需要恢复提交时，由调用者显式向同一工具传入返回的 `idem_key` 与完整原业务参数，才会恢复原意图；继续传空键仍会新建意图。轮询只查询、同步原任务状态，不会自动重新派发付费任务。
+**提交回执**保留 `task_id`、`status:"running"`、`eta_hint`、`next_step`，新增 `idem_key` 与 `idempotency_persisted:true`。显式传键时回显原键；为空或省略时返回为本次意图生成的 `auto:<UUIDhex>` 恢复键。本版本创建的付费任务在 `get_research_task` 中也返回该恢复键。需要恢复提交时，由调用者显式向同一工具传入返回的 `idem_key` 与完整原业务参数，才会恢复原意图；继续传空键仍会新建意图。轮询只查询、同步原任务状态，不会自动重新派发付费任务。
 
 `idempotency_persisted:true` 只表示提交意图已记录，不证明研究引擎已受理或执行。受理待确认时可能带 `progress`，重放时可能带原任务的 `task_status`；外层 status 保留旧回执口径，任务当前状态与结果以轮询为准。失败响应若带 task_id，先查询该任务并按 `recovery` 处理。
 
@@ -811,7 +811,7 @@ data 类配额(rpm/日额度),**不消耗 research 日额度**——放心轮询
 | `done` | `{task_id, status: "done", result: {...}}` |
 | `failed` | `{task_id, status: "failed", error: "<原因>"}` |
 
-本候选创建的付费任务还返回 `idem_key` 与 `idempotency_persisted:true`；即使提交时省略或传空键，也可先查历史找到 task_id，再轮询取得生成的 `auto:<UUIDhex>` 恢复键。历史只提供任务定位，恢复提交须向同一工具显式传该键与完整原参数，轮询不会自动重新派发。旧任务可能没有这些字段。
+本版本创建的付费任务还返回 `idem_key` 与 `idempotency_persisted:true`；即使提交时省略或传空键，也可先查历史找到 task_id，再轮询取得生成的 `auto:<UUIDhex>` 恢复键。历史只提供任务定位，恢复提交须向同一工具显式传该键与完整原参数，轮询不会自动重新派发。旧任务可能没有这些字段。
 
 `done` 时的 `result` 结构:
 

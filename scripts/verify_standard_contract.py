@@ -470,21 +470,23 @@ def main() -> None:
         "公开文档引用了不存在的生产脚本",
     )
     for document in (readme, usage, skill):
-        for marker in ("候选", "尚未发布", "get_my_quota", "list_my_research_tasks",
+        for marker in ("2.4.0", "正式发布", "get_my_quota", "list_my_research_tasks",
                        "recovery", "retry_safe", "content_status", "stale", "doc_id_mapping"):
-            require(marker in document, f"候选契约缺 {marker}")
+            require(marker in document, f"正式契约缺 {marker}")
+        for stale in ("候选契约", "候选版本", "尚未发布", "本候选"):
+            require(stale not in document, f"当前文档仍标为未正式发布: {stale}")
     for marker in ("next_cursor", "has_more", "file_mtime", "source_updated_at",
                    "matched_node_ids", "context_node_ids", "ambiguous", "citation_note",
                    "download_links_status", "idempotency_persisted", "task_status",
                    "[A-Za-z0-9][A-Za-z0-9_.:-]*", "新键不等于恢复原任务"):
-        require(marker in usage, f"候选使用文档缺 {marker}")
+        require(marker in usage, f"正式使用文档缺 {marker}")
     for tool in ("submit_deep_research", "submit_stock_screen", "submit_notes_report"):
         section = usage.split(f"#### `{tool}`", 1)[1].split("\n#### `", 1)[0]
         require("| `idem_key` | string | 否 | 空串 |" in section,
                 f"付费提交缺可选幂等参数: {tool}")
     for document in (readme, skill):
         for marker in ("idem_key", "idempotency_persisted", "session_id", "BadParam"):
-            require(marker in document, f"候选付费恢复说明缺 {marker}")
+            require(marker in document, f"正式付费恢复说明缺 {marker}")
     verify_boundary_self_checks()
     verify_public_boundary()
 
@@ -505,10 +507,13 @@ def main() -> None:
             encoding="utf-8"
         )
     )
-    require(plugin["version"] == "2.4.0-rc.1", "插件候选版本未升级到 2.4.0-rc.1")
-    require("插件候选版本升级到 2.4.0-rc.1" in changelog, "CHANGELOG 缺插件候选版本记录")
+    require(plugin["version"] == "2.4.0", "插件正式版本未升级到 2.4.0")
+    require("## 2026-10-13 · 2.4.0 正式发布" in changelog
+            and "插件正式版本升级到 2.4.0" in changelog, "CHANGELOG 缺正式版本记录")
     for manifest_text in (plugin["description"], marketplace["plugins"][0]["description"]):
-        require("17" in manifest_text and "候选" in manifest_text, "插件清单缺 Standard 17 工具候选口径")
+        require("17" in manifest_text and "2.4.0 正式发布" in manifest_text
+                and "候选" not in manifest_text and "尚未发布" not in manifest_text,
+                "插件清单缺 Standard 17 工具正式口径")
         require("全球宏观" in manifest_text, "插件清单缺全球宏观能力")
     require(marketplace["plugins"][0]["name"] == plugin["name"], "marketplace/plugin 名称漂移")
     require("adamas" in mcp["mcpServers"], "插件缺 adamas MCP 配置")
