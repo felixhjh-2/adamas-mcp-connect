@@ -1,7 +1,10 @@
 # ADAMAS MCP — 接入仓库
 
 > 把 ADAMAS 投研能力接进你自己的 AI:产业景气度、产业链传导图谱、公司跟踪、全球宏观、
-> 模型选股、每日信息流、深度研究与纪要生成 —— **一个 MCP 端点,Standard 档 15 个工具**。
+> 模型选股、每日信息流、深度研究与纪要生成 —— **一个 MCP 端点,Standard 档 17 个工具**。
+
+> **正式发布（2.4.0，2026-10-13）**：本文与配套 Skill 对应本版本的 Standard 契约。
+> 当前 key 实际可用工具和参数以 `tools/list`、`prompts/list` 与 `list_capabilities().service` 为准。
 
 - **端点**:`https://www.adamas-research.com/mcp`(remote MCP,streamable HTTP,无需安装任何服务)
 - **认证**:Bearer key，或客户端原生 OAuth（public client + PKCE）
@@ -156,21 +159,33 @@ python -m pip install "mcp>=1.28.1,<2"
 ADAMAS_API_KEY=<your-api-key> python examples/quickstart.py
 ```
 
-## 能做什么(Standard 档 15 个工具速览)
+## 能做什么(Standard 档 17 个工具速览)
 
 | 能力域 | 工具 |
 |---|---|
 | 资产解析 | `search_assets`(名称/代码 → 标准信息+行业分类) |
 | 产业 | `get_industry_scores`(景气度+六维趋势)`get_industry_graph`(产业链传导图谱)`get_industry_report`(报告 PDF) |
-| 公司 | `check_company_coverage`(批量查覆盖,支持代码/简称)`get_company_tracking`(跟踪报告全文,含历史期) |
+| 公司 | `check_company_coverage`(批量查覆盖,支持代码/简称，歧义需确认)`get_company_tracking`(跟踪报告与历史目录，明示正文交付状态) |
 | 全球宏观 | `get_global_macro`(国别九维度最新报告) |
 | 选股 | `get_model_picks`(最新已发布的量化选股 Top N);`submit_stock_screen`(产业链选股,异步) |
-| 信息流 | `get_info_feed`(当日要闻打分摘要) |
+| 信息流 | `get_info_feed`(最新文件摘要，明示日期与是否过期) |
 | 研究成稿 | `submit_deep_research`(深度研究问答,异步)`submit_notes_report`(深度纪要+PDF,异步)`get_strategy_reports`(沙盘推演报告) |
-| 入口 | `list_capabilities`(能力地图,每个会话第一站)`get_research_task`(异步任务轮询) |
+| 入口与恢复 | `list_capabilities`(授权目录、工作流与数据地图)`get_my_quota`(额度自查)`list_my_research_tasks`(任务历史与回执恢复)`get_research_task`(异步任务轮询) |
 
-典型玩法:让你的 AI 写行业跟踪简报、盘前扫当日高分要闻、比较不同经济体的宏观九维度、推演产业链传导、
+典型玩法:让你的 AI 写行业跟踪简报、盘前核对最新高分要闻、比较不同经济体的宏观九维度、推演产业链传导、
 把研究问题外包给 ADAMAS 研究引擎、一键产出深度纪要 PDF。方法论详见 Skill。
+
+首次会话先查能力地图，批量调用或提交研究前用 `get_my_quota` 自查；它免日额度扣减，仍受请求频率限制。
+研究提交回执丢失时，先用 `list_my_research_tasks` 找回 task_id，再轮询。
+付费三个提交工具支持可选 `idem_key`（≤128 个 ASCII 字符，`[A-Za-z0-9][A-Za-z0-9_.:-]*`）：同一 key、同一工具内同键同完整业务参数返回原任务，不重复扣本次账号用量。深研 `session_id` 也必须一致；同键换参为 `BadParam`。无键每次 RPC 仍新建意图，但回执与本版本创建任务的轮询会返回生成的 `auto:<UUIDhex>` 恢复键；丢回执先历史找 task_id，再轮询取键，需要恢复提交时显式传返回键与完整原参数。轮询不会自动重新派发付费任务，新键不等于恢复原任务。
+回执新增 `idempotency_persisted`，可能带 `progress` / `task_status`；这不证明研究引擎已受理。状态未知先查历史/轮询，不能盲目重投或推断已退款。
+历史按 `has_more` / `next_cursor` 翻页，保留原 status / kind；历史是落库摘要，当前状态与结果用轮询工具获取。
+工具错误先读 `error_class` 与 `recovery`，仅 `retry_safe=true` 时自动重放，不盲目重复付费提交。
+
+图谱返回焦点及一跳邻居，sector 同时限制两者；每条边的端点都在返回节点中。
+公司名单先确认 `ambiguous`，全文先查 `meta.content_status`，截断正文不能当成全文。
+信息流的日期来源于文件修改时间，先检查 `stale`；空文件未生成不代表市场没有新闻。
+深度研究的 `doc_id_mapping` 常为空；按 `citation_note` 使用可用映射，无映射保留原 E 编号，不编造文档标题或链接，也不承诺所有回答可审计。
 
 ## 安装 Skill(可选,强烈推荐)
 
@@ -191,4 +206,4 @@ Skill 是「怎么用好这些工具」的方法论包:先看地图再取数、�
 
 ## 版本
 
-见 [CHANGELOG.md](CHANGELOG.md)。文档与线上服务同步更新,以本仓库 main 为准。
+见 [CHANGELOG.md](CHANGELOG.md)。2.4.0 正式发布；实际支持范围以当前端点发现结果为准。

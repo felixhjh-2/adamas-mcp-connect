@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import re
 import subprocess
@@ -12,6 +13,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 STANDARD_TOOL_ORDER = (
     "list_capabilities",
+    "get_my_quota",
     "search_assets",
     "get_model_picks",
     "get_industry_scores",
@@ -26,6 +28,7 @@ STANDARD_TOOL_ORDER = (
     "submit_stock_screen",
     "submit_notes_report",
     "get_research_task",
+    "list_my_research_tasks",
 )
 STANDARD_TOOLS = set(STANDARD_TOOL_ORDER)
 STANDARD_DATA_TOOLS = STANDARD_TOOLS - {
@@ -37,10 +40,26 @@ STANDARD_PROMPTS = {"industry_brief", "deep_research_report"}
 
 # Hashes keep non-Standard capability names out of the public repository while still
 # making every checked-in text artifact fail closed if one is accidentally published.
-# This covers five higher-tier tool/prompt/metadata identifiers, six internal tool
-# identifiers, and the internal tier label. The legal Standard research mode `pro`
+# The allowlist describes only Standard. Digests also cover restricted schema
+# fields and additional capability identifiers. The legal research mode `pro`
 # is deliberately not forbidden.
 FORBIDDEN_PUBLIC_IDENTIFIER_DIGESTS = {
+    "af03096fed90ed61efaf370e89686a258eea1d733ad749e0a07c00b469180312",
+    "50ead54a10ff10018d57d5397928b40ded409a88a59dc0b8402d2dd863b08cd9",
+    "ba9e3f0716bd6175bf57c5badd5c432c9c6cf00b32f88de965df37c9ff124a11",
+    "c11b9df57a3f729a8cbd014bfb5a0eb0bd70695d66be1886442d5960daad8742",
+    "cb56f5b5d2b36cef24ba302b65e5e25ba1d6499bd7c6e6874eb8caf78c635d56",
+    "59df56f6428a076c95490334027477c4b02002e7a88b9b5011c8b3785933068e",
+    "433681e87baea3dd50e239a14d5445cbf0a769ec1b50cf0c0f6be3211cffa4b1",
+    "fd6b6dc73b6183a036d01ffec2ff682165e4382eb1028b71b59985359e68fcf7",
+    "ec2cf9bad77d338f9e34a02d03da4616e969c86cf379dfc40caa5cd039bc31a3",
+    "0433e36a960aad6513999c804ce78855a3d6791ae5682cf2f00c2558dfda2c28",
+    "c1f90d105c9930d0594c2a935561eb75643692762042ec9e8c2c8b9037e192d2",
+    "c1783b8c2a730b5aadf6d4f13a69dcd03b2d8d3521d270798b463ecd4f74e1c6",
+    "06b82b3ad9993fb329bd227f2e79b0e666183949413f36d5bf8c6991428b78a0",
+    "edbb743748408f8696ccb49f7c764c166c3e2d4543905e65bd661c7984073a77",
+    "8ded575293aed0cf0adc8bb4d2f6432446e41a2ee0fb5d275b4759b7550d5b5d",
+    "b6e934b7342e0cb822e0556240689957d14bdbd74b156c80d7d5afcc66173321",
     "2125ebbc4985a7d986156c75da7c6317b9a741c3de95bc89f4433385b7aa10ff",
     "53bc99f84c3e122726e48034a269688f373a009e30d87f2bccdbc0fe850af132",
     "783b9c1f43a8b6a014ffa5f6a3318b61c9dd45314217673399ca7edc1fa3b5c7",
@@ -56,9 +75,103 @@ FORBIDDEN_PUBLIC_IDENTIFIER_DIGESTS = {
 }
 
 
+# Generic credential/contact/path checks avoid embedding any real secret or host.
+# These token grammars are ASCII; adjacent Chinese prose must be a boundary.
+PUBLIC_CONTENT_PATTERNS = (
+    re.compile("内" + "部" + "|" + "组" + "合" + "|" + "长" + "周期" + "方向"),
+    re.compile(r"\badamas_[A-Za-z0-9_-]{24,}\b", re.ASCII),
+    re.compile(r"\b(?:AKIA|ASIA)[A-Z0-9]{16}\b", re.ASCII),
+    re.compile(r"\b[A-Za-z0-9._%+-]+@(?!users\.noreply\.github\.com\b)[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b", re.ASCII),
+    re.compile(r"/" + r"Users/[^\s`]+"),
+    re.compile(r"(?:postgres(?:ql)?|mysql|redis)://[^\s`]+", re.I),
+)
+IPV4_LITERAL = re.compile(r"(?<![\w.])(?:\d{1,3}\.){3}\d{1,3}(?![\w.])", re.ASCII)
+
+
+def content_leaks(line: str) -> bool:
+    if any(pattern.search(line) for pattern in PUBLIC_CONTENT_PATTERNS):
+        return True
+    for literal in IPV4_LITERAL.findall(line):
+        try:
+            address = ipaddress.ip_address(literal)
+        except ValueError:
+            continue
+        # Client callback examples may use loopback; service IPs are not public docs.
+        if not address.is_loopback:
+            return True
+    return False
+
+
 def require(condition: bool, message: str) -> None:
     if not condition:
         raise SystemExit(message)
+
+
+def verify_boundary_self_checks() -> None:
+    from types import SimpleNamespace
+    from unittest.mock import patch
+
+    probes = (
+        "内" + "部", "组" + "合", "长" + "周期" + "方向",
+        "probe" + "@" + "example.invalid",
+        "/" + "Users/placeholder/private",
+        "postgresql" + "://placeholder@invalid/qa",
+        "203" + "." + "0.113.42",
+        "adamas_" + "x" * 32,
+    )
+    for index, probe in enumerate(probes):
+        require(content_leaks(probe), f"公开边界负例未被拒绝: {index}")
+    require(not content_leaks("http://127.0.0.1:9200/mcp"), "误拦客户端 loopback")
+    require(not content_leaks("probe@users.noreply.github.com"), "误拦 GitHub noreply")
+
+    contexts = (("", ""), ("中文", ""), ("", "中文"), ("前文", "后文"),
+                ("（", "），"), ("prefix=", "; suffix"))
+    api_key = "adamas_" + "x" * 32
+    aws_ids = ("AKIA" + "A" * 16, "ASIA" + "B" * 16)
+    email = "probe" + "@" + "example.invalid"
+    public_ip = "203" + ".0.113.42"
+    for token_index, token in enumerate((api_key, *aws_ids, email, public_ip)):
+        for context_index, (left, right) in enumerate(contexts):
+            require(content_leaks(left + token + right),
+                    f"ASCII 敏感 token 邻接漏检: {token_index}/{context_index}")
+    for allowed in ("http://127.0.0.1:9200/mcp", "probe" + "@" + "users.noreply.github.com"):
+        for left, right in contexts:
+            require(not content_leaks(left + allowed + right), "误拦允许 token 邻接")
+
+    non_tokens = (
+        "x" + api_key, "_" + api_key, "adamas_" + "x" * 23,
+        *(prefix + token for token in aws_ids for prefix in ("x", "0", "_")),
+        *(token + suffix for token in aws_ids for suffix in ("x", "0", "_")),
+        "AKIA" + "A" * 15, "ASIA" + "B" * 17,
+        email + "9", email + "_", "probe" + "@" + "localhost",
+        *(prefix + public_ip for prefix in ("x", "_", "1.")),
+        *(public_ip + suffix for suffix in ("x", "_", ".1")),
+        "999" + ".0.113.42",
+    )
+    for index, token in enumerate(non_tokens):
+        require(not content_leaks(token), f"误把 ASCII 非 token 当成敏感值: {index}")
+    # A legal suffix extends these variable-length tokens instead of invalidating them.
+    require(content_leaks(api_key + "x_"), "漏检带合法后缀的 API token")
+    require(content_leaks("x" + email), "漏检扩展本地名的邮件 token")
+
+    # Exercise the actual tracked-file scanner with a synthetic digest, never a private name.
+    identifier = "synthetic_boundary_identifier"
+    def scanner_rejects_identifier(line: str) -> bool:
+        with (
+            patch.dict(globals(), FORBIDDEN_PUBLIC_IDENTIFIER_DIGESTS={sha256(identifier.encode()).hexdigest()}),
+            patch.object(subprocess, "run", return_value=SimpleNamespace(stdout="boundary-probe.md\0")),
+            patch.object(Path, "read_text", return_value=line),
+        ):
+            try:
+                verify_public_boundary()
+            except SystemExit:
+                return True
+        return False
+
+    for left, right in contexts:
+        require(scanner_rejects_identifier(left + identifier + right), "受限 ASCII 标识邻接漏检")
+    for token in ("x" + identifier, "_" + identifier, identifier + "x", identifier + "_"):
+        require(not scanner_rejects_identifier(token), "误拦扩展 ASCII 标识")
 
 
 def verify_public_boundary() -> None:
@@ -76,14 +189,14 @@ def verify_public_boundary() -> None:
         except UnicodeDecodeError:
             continue
         for line_number, line in enumerate(lines):
-            identifiers = re.findall(r"\b[a-z][a-z0-9_]{2,}\b", line.lower())
+            identifiers = re.findall(r"\b[a-z][a-z0-9_]{2,}\b", line.lower(), re.ASCII)
             if any(
                 sha256(identifier.encode()).hexdigest()
                 in FORBIDDEN_PUBLIC_IDENTIFIER_DIGESTS
                 for identifier in identifiers
-            ):
+            ) or content_leaks(line):
                 leaks.append(f"{path.relative_to(ROOT)}:{line_number}")
-    require(not leaks, f"公开材料含非 Standard 能力标识，位置: {leaks}")
+    require(not leaks, f"公开材料含受限标识或敏感内容，位置: {leaks}")
 
 
 def main() -> None:
@@ -131,12 +244,12 @@ def main() -> None:
         f"README 工具速览漂移: {sorted(readme_tools)}",
     )
     require(
-        len(readme_tools) == len(STANDARD_TOOL_ORDER) == 15,
+        len(readme_tools) == len(STANDARD_TOOL_ORDER) == 17,
         f"Standard 工具计数漂移: README={len(readme_tools)} contract={len(STANDARD_TOOL_ORDER)}",
     )
     for document in (readme, usage):
-        require("15 个工具" in document, "公开文档缺 Standard 15 工具口径")
-        for stale_count in ("13", "14"):
+        require("17 个工具" in document, "公开文档缺 Standard 17 工具口径")
+        for stale_count in ("13", "14", "15"):
             require(
                 stale_count + " 个工具" not in document,
                 f"公开文档仍残留旧工具数口径: {stale_count}",
@@ -281,8 +394,8 @@ def main() -> None:
             ".kimi-code/skills/adamas-research-report/" in section,
             "Kimi Code Skill 安装路径缺失",
         )
-    require(len(STANDARD_DATA_TOOLS) == 12, "data 类精确计数漂移")
-    require("12 个 data 类 + 3 个 research 提交工具" in usage, "工具分类计数漂移")
+    require(len(STANDARD_DATA_TOOLS) == 14, "data 类精确计数漂移")
+    require("14 个 data 类 + 3 个 research 提交工具" in usage, "工具分类计数漂移")
     for document in (usage, skill):
         for marker in (
             "get_global_macro()",
@@ -356,6 +469,25 @@ def main() -> None:
         "scratchpad/" + "prod_smoke.py" not in usage,
         "公开文档引用了不存在的生产脚本",
     )
+    for document in (readme, usage, skill):
+        for marker in ("2.4.0", "正式发布", "get_my_quota", "list_my_research_tasks",
+                       "recovery", "retry_safe", "content_status", "stale", "doc_id_mapping"):
+            require(marker in document, f"正式契约缺 {marker}")
+        for stale in ("候选契约", "候选版本", "尚未发布", "本候选"):
+            require(stale not in document, f"当前文档仍标为未正式发布: {stale}")
+    for marker in ("next_cursor", "has_more", "file_mtime", "source_updated_at",
+                   "matched_node_ids", "context_node_ids", "ambiguous", "citation_note",
+                   "download_links_status", "idempotency_persisted", "task_status",
+                   "[A-Za-z0-9][A-Za-z0-9_.:-]*", "新键不等于恢复原任务"):
+        require(marker in usage, f"正式使用文档缺 {marker}")
+    for tool in ("submit_deep_research", "submit_stock_screen", "submit_notes_report"):
+        section = usage.split(f"#### `{tool}`", 1)[1].split("\n#### `", 1)[0]
+        require("| `idem_key` | string | 否 | 空串 |" in section,
+                f"付费提交缺可选幂等参数: {tool}")
+    for document in (readme, skill):
+        for marker in ("idem_key", "idempotency_persisted", "session_id", "BadParam"):
+            require(marker in document, f"正式付费恢复说明缺 {marker}")
+    verify_boundary_self_checks()
     verify_public_boundary()
 
     plugin = json.loads(
@@ -375,10 +507,13 @@ def main() -> None:
             encoding="utf-8"
         )
     )
-    require(plugin["version"] == "2.3.1", "插件版本未升级到 2.3.1")
-    require("插件版本升级到 2.3.1" in changelog, "CHANGELOG 缺插件 2.3.1 升级记录")
+    require(plugin["version"] == "2.4.0", "插件正式版本未升级到 2.4.0")
+    require("## 2026-10-13 · 2.4.0 正式发布" in changelog
+            and "插件正式版本升级到 2.4.0" in changelog, "CHANGELOG 缺正式版本记录")
     for manifest_text in (plugin["description"], marketplace["plugins"][0]["description"]):
-        require("15" in manifest_text, "插件清单缺 Standard 15 工具口径")
+        require("17" in manifest_text and "2.4.0 正式发布" in manifest_text
+                and "候选" not in manifest_text and "尚未发布" not in manifest_text,
+                "插件清单缺 Standard 17 工具正式口径")
         require("全球宏观" in manifest_text, "插件清单缺全球宏观能力")
     require(marketplace["plugins"][0]["name"] == plugin["name"], "marketplace/plugin 名称漂移")
     require("adamas" in mcp["mcpServers"], "插件缺 adamas MCP 配置")
