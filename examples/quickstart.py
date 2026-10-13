@@ -101,7 +101,8 @@ async def main() -> None:
             # 2) 产业景气度 + 模型选股
             ind = await call_checked(session, "get_industry_scores", {"industry": "存储"})
             top = ind["industries"][0]
-            print(f"{top['name']} 景气度 {top['score']}(截至 {top.get('summary_as_of', '')[:10]})")
+            summary_date = (top.get("summary_as_of") or "")[:10] or "日期未提供"
+            print(f"{top['name']} 景气度 {top['score']}(截至 {summary_date})")
             picks = await call_checked(session, "get_model_picks", {"top_n": 3})
             for it in picks["picks"]:
                 print(f"  模型第{it['rank']}名: {it['asset_name']} expected_return={it['expected_return']}")
