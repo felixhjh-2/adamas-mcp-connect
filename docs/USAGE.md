@@ -501,9 +501,9 @@ components:{market, style, macro}}`,rank 越小越靠前,`percentile` 为 0–10
 
 | 名称 | 类型 | 必填 | 默认 | 说明 |
 |---|---|---|---|---|
-| `names` | string[] | 是 | — | 公司名或资产代码列表,**一次最多 100 个非空输入**；与全文查询共享归一化/歧义规则，超过请分批 |
+| `names` | string[] | 是 | — | 公司名或资产代码列表，**列表总数须为 1–100 项，每项为非空字符串**；调用前先 trim 并去掉空项，超过 100 项请分批；与全文查询共享归一化/歧义规则 |
 
-**返回结构要点**:`covered[]`(`{company_name, latest_report_date, periods, asked_as[]}`)、`not_covered[]`(`{asked, asked_as[], did_you_mean?}`)、`ambiguous[]`(`{asked, asked_as[], matched_by:"ambiguous", alternatives[], matches_total}`)、`ignored[]`(空白输入)与 `summary`。同一规范公司只返回一条 covered，`asked_as` 保留原始输入；`summary.asked` 为非空输入数，`unique_companies` 为归一化结果组数，另有 `covered` / `not_covered` / `ambiguous` / `ignored` 计数。歧义项不计入 covered 或 not_covered；从 alternatives 确认后再查。取全文使用 `covered[].company_name`。
+**返回结构要点**:`covered[]`(`{company_name, latest_report_date, periods, asked_as[]}`)、`not_covered[]`(`{asked, asked_as[], did_you_mean?}`)、`ambiguous[]`(`{asked, asked_as[], matched_by:"ambiguous", alternatives[], matches_total}`)、兼容字段 `ignored[]` 与 `summary`。`ignored` 不表示接口会接收空白项：列表包含 trim 后的空字符串会使整次调用参数校验失败，须在调用前去空。同一规范公司只返回一条 covered，`asked_as` 保留原始输入；`summary.asked` 为非空输入数，`unique_companies` 为归一化结果组数，另有 `covered` / `not_covered` / `ambiguous` / `ignored` 计数。歧义项不计入 covered 或 not_covered；从 alternatives 确认后再查。取全文使用 `covered[].company_name`。
 
 **示例**:
 
@@ -883,7 +883,7 @@ get_research_task(task_id) ──► running(带 progress 阶段描述)──►
 - 提交返回中的 `next_step` 字段已给出轮询指引,agent 直接照做即可;
 - 提交回执丢失、超时、网络断开或 progress 提示受理待确认时，先查 `list_my_research_tasks` 找回 task_id，再轮询 `get_research_task` 取回状态与恢复键；网络断开不等于任务取消，也不等于已退款。需要恢复提交时，显式传返回的 idem_key 与完整原参数；继续传空键仍会新建意图，轮询不会自动重新派发;
 - 等待期间不要空转:可先用 data 类工具取相关产业/标的的客观数据、起草报告框架(预置 prompts 即按此编排,见第 7 节);
-- 任务可能触发超时结算；以已落库终态与 `recovery` 为准，受理未知时不自行判死或重新生成。明确决定再次生成时使用新 idem_key；这是新任务，会正常消耗提交额度;
+- 超时结算不能从等待时长自行推断；旧版遗留任务或确认未派发的过期意图仍以原 task_id 返回的终态、错误与 `recovery` 为准。新版请求已经发出但受理未知时，不会仅因超过耗时预期或 1 小时就判失败、退款；保留原任务，不换键重投。确认原任务终态后，明确决定再次生成才使用新 idem_key；这是新任务，会正常消耗提交额度;
 - 轮询到 `done` / `failed` 后状态即为终态,结果已落库,可重复查询;
 - `task_id` 与 API key 绑定,换 key 查不到。
 
@@ -1005,17 +1005,17 @@ Bearer 连接，删除旧连接后按 2.3 节的 OAuth 命令重新添加，再�
 频率超限(每分钟调用数)走 HTTP 429,响应带标准 `Retry-After` 头和 `retry_after_seconds` 字段,按其中任一等待后重试即可。注意频率是按**每个 HTTP 请求**计的,连接握手、列工具等协议请求也计入。
 
 **Q:任务 `failed`,错误是「任务超时未完成(服务可能重启过),请重新提交」?**
-服务滚动更新/重启后，遗留任务超过 1 小时 TTL 可能被判 failed。先查询该 task_id 确认终态、错误与恢复指引，决定再次生成时才重新提交；这会正常消耗一次 research 提交额度。
+这条错误对应旧版遗留任务的 1 小时 TTL 处理，仅在原 task_id 已实际返回 `failed` 终态时适用，不能用来判断新版受理未知的任务。新版确认尚未派发的意图若安全过期，也以原任务返回的错误与 `recovery` 为准；已经发出请求但受理未知的任务不会仅因超过 1 小时就判失败或退款。先确认原任务终态及恢复指引，明确决定再次生成才发起新业务，不自动重投；新业务会正常消耗 research 提交额度。
 
 **Q:调用工具时返回「服务即将更新维护,暂停接收新任务,请几分钟后重试」?**
-服务处于更新窗口(排空中),会暂停所有新工具调用,已接纳的调用会继续跑完。
-按返回的 `retry_after_seconds`(300 秒)稍后重试即可。
+服务处于更新窗口(排空中)，会拒绝尚未接纳的新工具调用，已接纳的调用会继续跑完。这种明确拒绝与已经向研究引擎发出请求、受理状态未知不同；维护错误不能证明此前的未知提交已取消或未发生。
+`retry_after_seconds`(300 秒)只是等待建议，只有 `recovery.retry_safe=true` 才自动重放。付费提交返回的 `recovery.action="check_task_history"`、`retry_safe=false` 要求先查历史或原 task_id；保留原 idem_key 与完整参数，受理仍未知或无法唯一恢复时停止并联系支持，不换键或继续传空键重投。
 
 **Q:研究结果里 `evidence_count` 是 0?**
 正常。当前引擎(`engine: "agentic"`)不透出 evidence 统计；检查正文及 `citation_note` / `doc_id_mapping`。映射可能为空，无映射不得编造文档标题或链接；`mode` 回显提交模式。
 
-**Q:轮询 `get_research_task` 返回「引擎状态暂不可查,请稍后再试」?**
-研究引擎瞬时不可达,任务本身仍在跑,状态显示为 running。按正常间隔继续轮询即可;若持续超过任务耗时预期上限,参考 TTL 条目处理。
+**Q:轮询 `get_research_task` 返回「引擎状态暂不可查，请稍后查询原任务」?**
+这表示当前无法确认引擎状态；返回 `running` 不证明任务已受理或正在执行。按正常间隔继续查询原 task_id，缺少 ID 时先用 `list_my_research_tasks` 恢复；无法唯一恢复时停止并联系支持。新版请求可能已经发出但受理未知，即使超过耗时预期或 1 小时，也不能自行判失败、推断退款或换键重投；保持原 UUID、原幂等键和完整参数，按原任务的状态与 `recovery` 处理，不套用旧版 TTL 规则。
 
 **Q:`get_company_tracking` 返回了目录但 `content` 为空、带 `content_error`?**
 `meta.content_status="unavailable"` 表示全文未交付，目录可继续使用；这是 `isError=true` 的部分结果。检查 `error_class` 与 `recovery`：`S3Misconfigured` 需联系支持修复配置，临时 `Upstream` 按指引等待。`truncated` 则表示只交付了部分正文，不能当成全文。
