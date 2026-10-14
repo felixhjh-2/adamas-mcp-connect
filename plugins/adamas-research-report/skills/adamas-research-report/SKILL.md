@@ -135,6 +135,8 @@ data 工具取相关行业/标的客观数据 → 轮询拿到研究结论 → �
 
 **停止知识库生成**：原生 MCP 任务使用 `stop_kb_generation(message_id=..., generation_id=原本轮UUID)`；旧网页流可省略 generation_id。不能拿旧轮次停止新一轮。`cancel_requested` 后查询原任务确认终态，`not_running` 表示该轮不在运行，`not_cancellable_here` 不证明已停止。停止不等于退款，部分新回答仍计入用量；它不取消普通深研或通用 AI 异步任务，不请求退款。
 
+指定原轮停止被旧服务拒绝时，保留原 generation_id 并查询原任务；不要省略 generation_id 降级为消息级停止，也不要换成后续轮次的标识。等待服务更新或联系支持，拒绝不证明该轮已停止。
+
 客户端可能缓存工具列表；看不到新工具时刷新工具列表或断开后重新连接，再检查 tools/list。接入材料 2.6.0 与服务 contract_version `2026-10-14.2` 分别标识材料和服务契约。
 
 **热点纪要历史**：`get_hot_notes(date="YYYY-MM-DD")` 按日期分页，继续使用 next_cursor；

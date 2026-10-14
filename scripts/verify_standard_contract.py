@@ -552,7 +552,8 @@ def main() -> None:
                        "2026-10-14.2", "original_native_offset=0", "original_native_snapshot_chunk",
                        "next_offset", "base64", "bytes", "snapshot_sha256",
                        "total_bytes", "不能逐页先解码 UTF-8", "≤262144 bytes",
-                       "小对象只接受offset=0", "offset达到或超过total_bytes"):
+                       "小对象只接受offset=0", "offset达到或超过total_bytes",
+                       "保留原 generation_id", "不要省略 generation_id 降级为消息级停止"):
             require(marker in document, f"原生知识库安全使用说明缺 {marker}")
         for stale in ("不提供新建网页会话或重新生成回答入口", "仅网页可取消消息",
                       "四个付费提交工具"):

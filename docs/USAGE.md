@@ -990,6 +990,8 @@ data 类配额(rpm/日额度),**不消耗 research 日额度**——放心轮询
 
 参数 `message_id` 为助手消息正整数 ID；可选 `generation_id` 为本次生成 UUID，默认空串。原生 MCP 任务总是传回执的原 generation_id，不能拿旧轮次停止后来的重新生成。旧网页流可省略此字段，仍仅按旧流句柄处理。
 
+指定原轮停止被旧服务拒绝时，保留原 generation_id 并查询原任务；不要省略 generation_id 降级为消息级停止，也不要换成后续轮次的标识。等待服务更新或联系支持，拒绝不证明该轮已停止。
+
 - `cancel_requested`：已请求停止；仍需查询原任务或消息确认终态。
 - `not_running`：该轮已经结束或不在运行，不会转而停止后续轮次。
 - `not_cancellable_here`：当前服务没有可取消句柄；不能解释为已停止。

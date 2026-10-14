@@ -198,6 +198,7 @@ ADAMAS_API_KEY=<your-api-key> python examples/quickstart.py
 原快照按体量读取：原快照JSON≤262144 bytes的小对象返回 original_native_snapshot；大对象返回 original_native_snapshot_chunk。首请求 original_native_offset=0，后续仅在 include_original_native=true 时传上一页 next_offset（UTF-8 字节偏移），直到 next_offset=null。每页原始bytes最多262144，小对象只接受offset=0，offset达到或超过total_bytes返回BadParam。逐页 base64 解码为 bytes，按 chunk_offset 拼接，核对 total_bytes 与 snapshot_sha256 后，才一次 UTF-8 解码并 JSON 解析；不能逐页先解码 UTF-8，分片可能切在 emoji 字节中间。每页重新校验原 key 与账号权限，且应核对同一 recovery_snapshot_id / 消息 / 会话 / SHA / 总字节数；页外 versions_trimmed 可随任务终态变化，不是原快照 JSON 的一部分。
 `update_kb_message` 只能显式编辑 content / versions，不能完整恢复 agent_steps；读取快照也不能恢复已删除会话。
 原生生成停止时向 `stop_kb_generation` 传本轮 `message_id` 与 `generation_id`；旧网页流可省略 generation_id。`cancel_requested` 仅表示已请求，`not_running` 表示该轮不在运行，`not_cancellable_here` 不表示已停止。继续查询原任务确认结果，停止不等于退款；部分新回答也计入本次用量。它不取消普通深研或通用 AI 异步任务。
+指定原轮停止被旧服务拒绝时，保留原 generation_id 并查询原任务；不要省略 generation_id 降级为消息级停止，也不要换成后续轮次的标识。等待服务更新或联系支持，拒绝不证明该轮已停止。
 公开分享须用户明确同意，删除会话不撤销分享快照，也不删除独立研究回执及原回答快照；生成中先停止并确认终态。热点历史用日期与游标翻页，不能当作实时新闻。
 客户端可能缓存工具列表；若看不到新工具，刷新工具列表或断开后重新连接，再查 tools/list。材料 2.6.0 与服务 contract_version `2026-10-14.2` 分别标识文档与服务契约，实际以发现结果为准。
 工具错误先读 `error_class` 与 `recovery`，仅 `retry_safe=true` 时自动重放，不盲目重复付费提交。
