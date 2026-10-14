@@ -125,6 +125,21 @@ def require(condition: bool, message: str) -> None:
         raise SystemExit(message)
 
 
+def verify_kb_versions_documentation(documents: tuple[str, ...]) -> None:
+    # These are simultaneous limits: a valid item/serialized field can still
+    # exceed the independent UTF-8 transport limit. Never publish a per-item
+    # 400000 allowance alongside a correct aggregate paragraph elsewhere.
+    incorrect_item_limit = re.compile(r"(?:每项|单项)\s*(?:最多|不超过|上限为|为|[≤<]=?)?\s*[`*]*400000")
+    for document in documents:
+        require(not incorrect_item_limit.search(document), "versions 错写每项400000字符")
+        for marker in ("changes.versions", "最多20项", "每项≤399996个Unicode字符",
+                       "完整数组", "json.dumps(versions, ensure_ascii=False)",
+                       "默认格式序列化后≤400000个Unicode字符", "含括号、引号、转义、逗号和空格",
+                       "非ASCII字符不转义", "元素之间用逗号加一个空格分隔",
+                       "仍须满足完整 UTF-8 JSON-RPC 请求体的 1 MiB 上限"):
+            require(marker in document, f"versions 序列化与完整请求限制说明缺 {marker}")
+
+
 def verify_boundary_self_checks() -> None:
     from types import SimpleNamespace
     from unittest.mock import patch
@@ -501,6 +516,7 @@ def main() -> None:
                        "不自动截断文本、丢弃 history 或 versions", "不换键重投写入或收费操作", "网页编辑",
                        "用户明确缩小输入范围"):
             require(marker in document, f"公开完整请求大小或安全恢复说明缺 {marker}")
+    verify_kb_versions_documentation((readme, usage, skill))
     for marker in ("next_cursor", "has_more", "file_mtime", "source_updated_at",
                    "matched_node_ids", "context_node_ids", "ambiguous", "citation_note",
                    "download_links_status", "idempotency_persisted", "task_status",

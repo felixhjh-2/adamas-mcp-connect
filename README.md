@@ -181,7 +181,12 @@ ADAMAS_API_KEY=<your-api-key> python examples/quickstart.py
 `POST /mcp` 的完整 UTF-8 JSON-RPC 请求体（协议字段及全部参数）最多 **1 MiB（1048576 bytes）**；可查看 `list_capabilities().transport.request_limits`。
 字段字符上限不等于完整请求字节上限，中文、emoji、JSON 转义和空白都计入实际传输字节。
 
-超限返回 HTTP 413，本次请求未进入工具业务；不能据此推断此前受理状态未知的提交未被受理，先核对原任务或原资源。
+编辑消息时，`changes.versions` 最多20项，每项≤399996个Unicode字符；完整数组按
+`json.dumps(versions, ensure_ascii=False)` 默认格式序列化后≤400000个Unicode字符，
+含括号、引号、转义、逗号和空格。非ASCII字符不转义，元素之间用逗号加一个空格分隔。
+这些字段限制同时生效，仍须满足完整 UTF-8 JSON-RPC 请求体的 1 MiB 上限。
+
+完整请求体超过 1 MiB 时返回 HTTP 413，本次请求未进入工具业务；不能据此推断此前受理状态未知的提交未被受理，先核对原任务或原资源。
 不自动截断文本、丢弃 history 或 versions，也不换键重投写入或收费操作。大文本可用网页编辑，或由用户明确缩小输入范围后再操作。
 
 研究提交回执丢失时，先用 `list_my_research_tasks` 找回 task_id，再轮询。
