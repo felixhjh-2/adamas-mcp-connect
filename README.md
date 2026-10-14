@@ -1,9 +1,9 @@
 # ADAMAS MCP — 接入仓库
 
 > 把 ADAMAS 投研能力接进你自己的 AI:产业景气度、产业链传导图谱、公司跟踪、全球宏观、
-> 模型选股、每日信息流、深度研究与纪要生成 —— **一个 MCP 端点,Standard 档 26 个工具**。
+> 模型选股、每日信息流、原生知识库问答、深度研究与纪要生成 —— **一个 MCP 端点,Standard 档 28 个工具**。
 
-> **接入材料（2.5.0，2026-10-14）**：本文与配套 Skill 对应本版本的 Standard 契约。
+> **接入材料（2.6.0，2026-10-14）**：本文与配套 Skill 对应本版本的 Standard 契约。
 > 当前 key 实际可用工具和参数以 `tools/list`、`prompts/list` 与 `list_capabilities().service` 为准。
 
 - **端点**:`https://www.adamas-research.com/mcp`(remote MCP,streamable HTTP,无需安装任何服务)
@@ -159,7 +159,7 @@ python -m pip install "mcp>=1.28.1,<2"
 ADAMAS_API_KEY=<your-api-key> python examples/quickstart.py
 ```
 
-## 能做什么(Standard 档 26 个工具速览)
+## 能做什么(Standard 档 28 个工具速览)
 
 | 能力域 | 工具 |
 |---|---|
@@ -169,7 +169,7 @@ ADAMAS_API_KEY=<your-api-key> python examples/quickstart.py
 | 全球宏观 | `get_global_macro`(国别九维度最新报告) |
 | 选股 | `get_model_picks`(最新已发布的量化选股 Top N);`submit_stock_screen`(产业链选股,异步) |
 | 信息流与历史 | `get_info_feed`(最新文件摘要，明示日期与是否过期);`get_hot_notes`(按日期翻阅热点纪要及正文) |
-| 网页知识库 | `list_kb_conversations` `get_kb_conversation`(本人会话与消息);`update_kb_message` `delete_kb_conversation`(编辑或删除);`share_kb_content` `manage_kb_shares`(公开分享与撤销);`stop_kb_generation`(仅网页可取消消息) |
+| 网页知识库 | `list_kb_conversations` `get_kb_conversation`(本人会话与消息);`update_kb_message` `delete_kb_conversation`(编辑或删除);`share_kb_content` `manage_kb_shares`(公开分享与撤销);`stop_kb_generation`(按生成轮次请求停止);`submit_kb_question` `regenerate_kb_answer`(原生提问与重新生成，研究提交额度) |
 | 研究成稿 | `submit_deep_research`(深度研究问答,异步)`submit_notes_report`(深度纪要+PDF,异步)`get_strategy_reports`(沙盘推演报告) |
 | 入口与恢复 | `list_capabilities`(授权目录、工作流与数据地图)`get_my_quota`(额度自查)`list_my_research_tasks`(任务历史与回执恢复)`get_research_task`(异步任务轮询) |
 
@@ -190,10 +190,14 @@ ADAMAS_API_KEY=<your-api-key> python examples/quickstart.py
 不自动截断文本、丢弃 history 或 versions，也不换键重投写入或收费操作。大文本可用网页编辑，或由用户明确缩小输入范围后再操作。
 
 研究提交回执丢失时，先用 `list_my_research_tasks` 找回 task_id，再轮询。
-付费四个提交工具支持可选 `idem_key`（≤128 个 ASCII 字符，`[A-Za-z0-9][A-Za-z0-9_.:-]*`）：同一 key、同一工具内同键同完整业务参数返回原任务，不重复扣本次账号用量。深研 `session_id` 也必须一致；同键换参为 `BadParam`。无键每次 RPC 仍新建意图，但回执与本版本创建任务的轮询会返回生成的 `auto:<UUIDhex>` 恢复键；丢回执先历史找 task_id，再轮询取键，需要恢复提交时显式传返回键与完整原参数。轮询不会自动重新派发付费任务，新键不等于恢复原任务。 持久付费任务还匹配原绑定账号；改绑不转让历史，更换账号应重新签发 key。旧游标失效时从第一页重取。
+付费六个提交工具支持可选 `idem_key`（≤128 个 ASCII 字符，`[A-Za-z0-9][A-Za-z0-9_.:-]*`）：同一 key、同一工具内同键同完整业务参数返回原任务，不重复扣本次账号用量。深研 `session_id` 也必须一致；同键换参为 `BadParam`。无键每次 RPC 仍新建意图，但回执与本版本创建任务的轮询会返回生成的 `auto:<UUIDhex>` 恢复键；丢回执先历史找 task_id，再轮询取键，需要恢复提交时显式传返回键与完整原参数。轮询不会自动重新派发付费任务，新键不等于恢复原任务。 持久付费任务还匹配原绑定账号；改绑不转让历史，更换账号应重新签发 key。旧游标失效时从第一页重取。
 回执新增 `idempotency_persisted`，可能带 `progress` / `task_status`；这不证明研究引擎已受理。状态未知先查历史/轮询，不能盲目重投或推断已退款。
 历史按 `has_more` / `next_cursor` 翻页，保留原 status / kind；历史是落库摘要，当前状态与结果用轮询工具获取。
-网页会话 ID、消息 ID 与研究 task_id 分别管理；深研不会自动创建网页会话。公开分享须用户明确同意，删除会话不撤销分享快照。停止网页生成返回 `cancel_requested` / `not_running` / `not_cancellable_here`；后者不表示已停止，也不支持取消异步研究或请求退款。热点历史用日期与游标翻页，不能当作实时新闻。
+网页会话 ID、消息 ID 与研究 task_id 分别管理；深研不会自动创建网页会话。原生 `submit_kb_question` 可新建或续问本人网页知识库会话，`regenerate_kb_answer` 对最新已结束助手消息重新生成；两者返回原 `task_id` 与 `generation_id`；受理待确认时可能尚无 `conversation_id` / `message_id`，确认后才给出原生标识与停止指引。保留原任务查询，不因缺少标识换键重投。网页与 MCP 后续提问均使用本人会话最近 3 轮已完成问答的摘要，重新生成排除目标回答，不接收调用方伪造历史。
+重新生成保留原 content / agent_steps / 完整 versions 快照；没有新回答时原样回退，有部分新回答则保留为新版本，网页显示最近 5 版。显式 `get_research_task(include_original_native=true)` 只读取原快照供核对及恢复所需数据；读取不自动恢复。`update_kb_message` 只能显式编辑 content / versions，不能完整恢复 agent_steps；读取快照也不能恢复已删除会话。
+原生生成停止时向 `stop_kb_generation` 传本轮 `message_id` 与 `generation_id`；旧网页流可省略 generation_id。`cancel_requested` 仅表示已请求，`not_running` 表示该轮不在运行，`not_cancellable_here` 不表示已停止。继续查询原任务确认结果，停止不等于退款；部分新回答也计入本次用量。它不取消普通深研或通用 AI 异步任务。
+公开分享须用户明确同意，删除会话不撤销分享快照，也不删除独立研究回执及原回答快照；生成中先停止并确认终态。热点历史用日期与游标翻页，不能当作实时新闻。
+客户端可能缓存工具列表；若看不到新工具，刷新工具列表或断开后重新连接，再查 tools/list。材料 2.6.0 与服务 contract_version `2026-10-14.2` 分别标识文档与服务契约，实际以发现结果为准。
 工具错误先读 `error_class` 与 `recovery`，仅 `retry_safe=true` 时自动重放，不盲目重复付费提交。
 
 图谱返回焦点及一跳邻居，sector 同时限制两者；每条边的端点都在返回节点中。
@@ -220,4 +224,4 @@ Skill 是「怎么用好这些工具」的方法论包:先看地图再取数、�
 
 ## 版本
 
-见 [CHANGELOG.md](CHANGELOG.md)。2.5.0 接入材料；服务升级期间实际支持范围以当前端点发现结果为准。
+见 [CHANGELOG.md](CHANGELOG.md)。2.6.0 接入材料；服务升级期间实际支持范围以当前端点发现结果为准。

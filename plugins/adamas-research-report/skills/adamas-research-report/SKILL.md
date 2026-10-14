@@ -1,13 +1,13 @@
 ---
 name: adamas-research-report
-description: 用 ADAMAS 投研数据写专业研究报告/晨会纪要/行业跟踪/全球宏观对比。当用户要写行业分析、个股解读、宏观分析或投研报告,且已接入 ADAMAS MCP 连接器时使用。
+description: 用 ADAMAS 投研数据写研究报告/晨会纪要/行业跟踪/全球宏观对比，并在网页知识库新建、续问或重新生成回答。当用户要做投研分析或知识库问答，且已接入 ADAMAS MCP 连接器时使用。
 ---
 
 # ADAMAS 投研报告技能
 
 前提:已在连接器中接入 ADAMAS MCP(工具名以 `list_capabilities`、`get_industry_scores` 等出现)。
 
-接入材料（2.5.0，2026-10-14）：本技能只使用标准档 26 个工具。先发现当前端点能力，不要假定当前 key 未获授权的工具可用。
+接入材料（2.6.0，2026-10-14）：本技能只使用标准档 28 个工具。先发现当前端点能力，不要假定当前 key 未获授权的工具可用。
 
 ## 核心方法论
 
@@ -44,14 +44,15 @@ description: 用 ADAMAS 投研数据写专业研究报告/晨会纪要/行业跟
    - 模型观点:`submit_deep_research`(深度研究,异步)、
      `submit_stock_screen`(产业链量化选股,异步)、
      `submit_notes_report`(深度纪要成稿,异步)、
-     `submit_company_roundtable`(指定公司与报告期数的横向研究,异步)。
+     `submit_company_roundtable`(指定公司与报告期数的横向研究,异步)、
+     `submit_kb_question`(原生网页知识库新建/续问)、`regenerate_kb_answer`(最新回答重新生成)。
      提交后按返回的 `next_step` 轮询 `get_research_task`,等待期间先取客观数据并起草框架;
-     ⚠️ 这四个会**消耗所属账号的使用额度**(客观数据类不消耗):
+     ⚠️ 这六个会**消耗所属账号的使用额度**(客观数据类不消耗):
      · 同一个业务不要反复提交；确认失败后按服务端结算结果处理，状态未知不代表失败或已退款，成功产出的不退;
-     · `submit_deep_research` 选 `mode="pro"` 用量按 2 倍计,按需要选档而不是默认拉满;
+     · `submit_deep_research` / `submit_kb_question` / `regenerate_kb_answer` 选 `mode="pro"` 用量按 2 倍计,按需要选档而不是默认拉满;
      · 若返回"该 API key 未绑定用户",说明这把 key 还没绑账号,联系 ADAMAS 处理,重试无用。
 4. **额度与恢复先自查**:批量调用或提交前用 `get_my_quota`(免日扣减，仍计 RPM)；提交回执丢失先用 `list_my_research_tasks` 恢复 task_id，再轮询，不能直接重复付费提交。历史支持 limit/status/kind/cursor，翻页保留原筛选；只读落库摘要，不代表上游最新状态。
-   四个付费提交工具支持可选 `idem_key`：非空须 ≤128 个 ASCII 字符，匹配 `[A-Za-z0-9][A-Za-z0-9_.:-]*`。同一 API key、同一工具内，同键与完整业务参数一致时返回原任务、不重复扣本次账号用量；深研 `session_id` 也纳入业务参数。换参冲突为 `BadParam`，新业务用新键；新键不等于恢复原任务。无键兼容每次 RPC 新建意图，但回执与本版本创建任务的轮询会返回生成的 `auto:<UUIDhex>` 恢复键。丢回执先历史找 task_id，再轮询取键；需要恢复提交时，向同一工具显式传返回键与完整原参数。继续传空键仍是新意图，轮询不会自动重新派发付费任务。`idempotency_persisted:true` 表示提交意图已记录，受理可能待确认；先查历史/轮询，不盲重投，不推断已退款。按可选 `task_status` 与 `progress` 查看原任务提示，当前结果仍用轮询获取。
+   六个付费提交工具支持可选 `idem_key`：非空须 ≤128 个 ASCII 字符，匹配 `[A-Za-z0-9][A-Za-z0-9_.:-]*`。同一 API key、同一工具内，同键与完整业务参数一致时返回原任务、不重复扣本次账号用量；深研 `session_id` 也纳入业务参数。换参冲突为 `BadParam`，新业务用新键；新键不等于恢复原任务。无键兼容每次 RPC 新建意图，但回执与本版本创建任务的轮询会返回生成的 `auto:<UUIDhex>` 恢复键。丢回执先历史找 task_id，再轮询取键；需要恢复提交时，向同一工具显式传返回键与完整原参数。继续传空键仍是新意图，轮询不会自动重新派发付费任务。`idempotency_persisted:true` 表示提交意图已记录，受理可能待确认；先查历史/轮询，不盲重投，不推断已退款。按可选 `task_status` 与 `progress` 查看原任务提示，当前结果仍用轮询获取。
 5. **错误按恢复指引处理**:检查 `isError`、`error_class` 与 `recovery.action`，仅 `retry_safe=true` 才自动重放；按可选 `retry_after_seconds` 等待，不盲重试。
 6. **长文本先检查整次请求大小**：`POST /mcp` 的完整 UTF-8 JSON-RPC 请求体（协议字段及全部参数）最多 **1 MiB（1048576 bytes）**；查看 `list_capabilities().transport.request_limits`。字段字符上限不等于完整请求字节上限，中文、emoji、JSON 转义和空白都计入实际传输字节。超限返回 HTTP 413，本次请求未进入工具业务；不能据此推断此前受理状态未知的提交未被受理，先核对原任务或原资源。不自动截断文本、丢弃 history 或 versions，也不换键重投写入或收费操作。大文本可用网页编辑，或由用户明确缩小输入范围后再操作。
    编辑消息时，`changes.versions` 最多20项，每项≤399996个Unicode字符；完整数组按 `json.dumps(versions, ensure_ascii=False)` 默认格式序列化后≤400000个Unicode字符，含括号、引号、转义、逗号和空格。非ASCII字符不转义，元素之间用逗号加一个空格分隔。这些字段限制同时生效，仍须满足完整 UTF-8 JSON-RPC 请求体的 1 MiB 上限；不能只检查单项正文长度。
@@ -126,10 +127,13 @@ data 工具取相关行业/标的客观数据 → 轮询拿到研究结论 → �
 用户明确公开意图；超时先查 `manage_kb_shares`，不重复发新链接。删除会话不撤销独立分享快照，
 需按分享ID显式 revoke。
 
-**停止网页生成**：`stop_kb_generation(message_id=...)` 仅请求停止网页流式消息；
-`cancel_requested` 后重新读取确认终态，`not_running` 表示已结束，
-`not_cancellable_here` 表示当前进程没有可取消句柄，不能说已停止。
-不得拿 MCP task_id 或 AI 异步任务来取消，不请求退款。
+**原生知识库提问与重新生成**：用户要在网页继续的会话时使用 `submit_kb_question(question, conversation_id=0)` 新建，或传本人未删除 conversation_id 续问。服务采用本人最近 3 轮已完成问答摘要（问题至 2000、回答至 500 个 Unicode 字符），不改写原正文；调用方不传 history/session_id，网页后续也连续使用同一会话历史。`regenerate_kb_answer(message_id=...)` 仅重做最新已结束助手消息，用其原问题并排除目标回答的历史。保留原 task_id / generation_id / conversation_id / message_id，用原任务轮询，二者消耗 research 提交额度及账号用量，pro 模式按 2 倍。
+
+重新生成保留原 content / agent_steps / 完整 versions；没有新回答时原样回退，有部分新回答则保留为新版本并计入用量，网页显示最近 5 版。以 completion / partial 判断完整度。显式 `get_research_task(include_original_native=true)` 只读取原快照供核对及恢复所需数据；读取不自动恢复，也不重跑或再次结算。快照 versions 是完整原 JSON 字符串，附字节数；`update_kb_message` 只能显式编辑 content / versions，不能恢复 agent_steps。删除会话不会抹去独立回执/原快照，读取快照不会重建已删除会话；活动生成先停止并确认终态再编辑或删除。
+
+**停止知识库生成**：原生 MCP 任务使用 `stop_kb_generation(message_id=..., generation_id=原本轮UUID)`；旧网页流可省略 generation_id。不能拿旧轮次停止新一轮。`cancel_requested` 后查询原任务确认终态，`not_running` 表示该轮不在运行，`not_cancellable_here` 不证明已停止。停止不等于退款，部分新回答仍计入用量；它不取消普通深研或通用 AI 异步任务，不请求退款。
+
+客户端可能缓存工具列表；看不到新工具时刷新工具列表或断开后重新连接，再检查 tools/list。接入材料 2.6.0 与服务 contract_version `2026-10-14.2` 分别标识材料和服务契约。
 
 **热点纪要历史**：`get_hot_notes(date="YYYY-MM-DD")` 按日期分页，继续使用 next_cursor；
 `get_hot_notes(note_id=...)` 读取段落正文，不能同时带日期/游标。
