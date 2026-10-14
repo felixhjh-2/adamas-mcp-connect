@@ -1,6 +1,6 @@
 # ADAMAS MCP 使用文档
 
-> **正式发布（2.4.0，2026-10-13）**：当前可用工具与参数以 `tools/list`、`prompts/list` 和 `list_capabilities().service` 为准。
+> **接入材料（2.5.0，2026-10-14）**：当前可用工具与参数以 `tools/list`、`prompts/list` 和 `list_capabilities().service` 为准。
 
 > 面向外部集成方。读完本文即可把 ADAMAS 投研能力接进你自己的 agent / IDE / 办公工具。
 
@@ -32,7 +32,7 @@ remote MCP endpoint 与 `Authorization: Bearer` 请求头的客户端
 - **端点**:`https://www.adamas-research.com/mcp`
 - **传输**:MCP streamable HTTP(无状态,支持断线重连后重新调用)
 - **认证**:二选一 —— 每个请求携带 `Authorization: Bearer <your-api-key>`（API key 向 ADAMAS 申请），或使用客户端原生 OAuth 自动授权（public client + S256 PKCE，无需手工 key/secret）
-- **内容**:本公开主文档对应 Standard 档,**17 个工具**(14 个 data 类 + 3 个 research 提交工具，含额度自查与任务历史)+ 2 个预置 prompts + 1 个 Agent Skill 包。Standard 包含最新已发布的量化选股结果、产业链量化选股与全球宏观入口。本公开文档只描述 Standard 契约。
+- **内容**:本公开主文档对应 Standard 档,**26 个工具**(22 个 data 类入口 + 4 个 research 提交工具，含额度自查与任务历史)+ 2 个预置 prompts + 1 个 Agent Skill 包。Standard 包含最新已发布的量化选股结果、产业链量化选股与全球宏观入口。本公开文档只描述 Standard 契约。
 
 两类工具的契约有本质区别,集成前务必理解(详见第 3、6 节):
 
@@ -696,7 +696,7 @@ components:{market, style, macro}}`,rank 越小越靠前,`percentile` 为 0–10
 
 research 类与 data 类的契约区别:**结果含模型生成的分析观点**;走独立的日额度(默认每 key 每日 20 次提交)与全局并发闸;均为异步——提交秒回 `task_id`,用 `get_research_task` 轮询;结果强制附 `disclaimer`,**引用必须原文保留**。
 
-**付费提交幂等**：三个提交工具均新增可选 `idem_key`，为空或省略时保留每次 RPC 创建新提交意图的旧行为。非空键必须为 1–128 个 ASCII 字符，匹配 `[A-Za-z0-9][A-Za-z0-9_.:-]*`。在同一 API key、同一工具内，同键与完整业务参数一致时返回原任务，不重复扣本次账号用量；跨 key 或跨工具不能恢复原任务。深度研究的 `question`、`mode`、`session_id` 都影响业务，重放必须保持一致。追问使用同一 session_id、不同 question 时是新业务，应使用新 idem_key。
+**付费提交幂等**：四个提交工具均新增可选 `idem_key`，为空或省略时保留每次 RPC 创建新提交意图的旧行为。非空键必须为 1–128 个 ASCII 字符，匹配 `[A-Za-z0-9][A-Za-z0-9_.:-]*`。在同一 API key、同一工具内，同键与完整业务参数一致时返回原任务，不重复扣本次账号用量；跨 key 或跨工具不能恢复原任务。深度研究的 `question`、`mode`、`session_id` 都影响业务，重放必须保持一致。追问使用同一 session_id、不同 question 时是新业务，应使用新 idem_key。
 
 同键换参返回 MCP 工具错误 `error_class="BadParam"`，不是 HTTP 409；恢复原任务须保留原键和原参数，明确提交新业务才使用新键。**新键不等于恢复原任务**。回执丢失或受理状态未知时，先用 `list_my_research_tasks` 找回 task_id，再用 `get_research_task` 查询原任务；不要盲目重投、换键或推断任务已取消、已退款。
 
@@ -793,9 +793,33 @@ research 类与 data 类的契约区别:**结果含模型生成的分析观点**
 
 ---
 
+#### `submit_company_roundtable` — 多家公司报告横向研究
+
+按明确选择的公司与报告期数生成横向问答，使用本次实际报告快照。先用
+`search_assets` 确认资产代码，再检查公司报告覆盖；不要用通用深研替代指定报告的研究。
+
+| 名称 | 类型 | 必填 | 默认 | 说明 |
+|---|---|---|---|---|
+| `asset_codes` | string[] | 是 | — | 1–40 个资产代码，合并同公司后最多 10 家公司 |
+| `question` | string | 是 | — | 1–2000 字的横向研究问题 |
+| `periods` | int | 否 | 1 | 每家公司最近 1–3 期报告 |
+| `history` | object[] | 否 | `[]` | 最多 12 轮已完成问答，每项为 `{question, answer}`；实际使用最近 6 轮。单项问题≤2000字、回答≤8000字 |
+| `idem_key` | string | 否 | 空串 | 可选提交幂等键，≤128 个 ASCII 字符；同一次业务保留原键和完整参数 |
+
+异步返回 `task_id`，按 `next_step` 用 `get_research_task` 轮询；完成结果含
+`question`、`answer`、`engine:"company_roundtable"`、`report_count`、
+`sources[]`（实际公司名与报告日期）和 `disclaimer`。报告材料过多时需减少公司或期数，
+不能把未交付的报告视为已经用于回答。
+
+它消耗研究提交额度和绑定账号的公司圆桌用量，与其他研究共享每 key 单任务限制。
+历史问答由调用方显式传入，不自动创建网页知识库会话。网络断开不代表停止或退款；
+回执不明先查原任务，重试保留全部参数（包括 history），不换键重投。
+
+---
+
 #### `get_research_task` — 轮询异步任务
 
-**用途**:查询 `submit_deep_research` / `submit_stock_screen` / `submit_notes_report`
+**用途**:查询 `submit_deep_research` / `submit_stock_screen` / `submit_notes_report` / `submit_company_roundtable`
 提交的任务状态与结果。**只能查询当前 API key 自己提交的任务；持久付费任务还须匹配提交时的绑定账号**。修改绑定不转让历史；更换账号应联系服务方撤销旧 key 并重新发 key。此调用计入
 data 类配额(rpm/日额度),**不消耗 research 日额度**——放心轮询,但请遵守建议间隔。
 
@@ -850,17 +874,85 @@ data 类配额(rpm/日额度),**不消耗 research 日额度**——放心轮询
 |---|---|---|---|
 | `limit` | int | 10 | 每页 1–50 条 |
 | `status` | string \| null | `null`（可省略） | 不筛选，或 `pending` / `running` / `done` / `failed` |
-| `kind` | string \| null | `null`（可省略） | 不筛选，或 `deep_research` / `notes_report` / `stock_screen` |
+| `kind` | string \| null | `null`（可省略） | 不筛选，或 `deep_research` / `notes_report` / `stock_screen` / `company_roundtable` |
 | `cursor` | string | 空串 | 下一页使用上页 `next_cursor`，保持原 status / kind |
 
 不筛选时省略 `status` / `kind` 或传 `null`，不要传空字符串；`cursor` 的默认值仍为空字符串。
 
 **返回**:`tasks[]`(含 `task_id`、`kind`、`status`、`progress`、失败时 `error`、`error_class` 与 `created_at` / `started_at` / `finished_at`)、`count`、`has_more`、`next_cursor`(末页 null)及 `meta.note`。按创建时间与 task_id 倒序，游标绑定当前 key、绑定账号和过滤条件；换 key、账号或条件会拒绝。旧版本游标失效时省略 cursor 从第一页重新获取。历史不包含问题、研究正文或完整结果，也不主动同步上游状态；找到 task_id 后用 `get_research_task` 获取当前状态和结果。它不能恢复其他 key 的任务。
 
+### 3.3 网页知识库与热点历史（data 配额）
+
+以下入口属于 Standard 的 data 配额，但含编辑、删除、公开分享等写操作，
+**data 类不等于只读**。网页知识库入口要求 key 已绑定本人有效账号，且该账号已开通
+知识库能力；MCP 档位不能替代网页账号权限。无会话时返回正常空列表。游标为不透明字符串（≤1024字符），原样传回；更换账号、会话或筛选时重新取首页。
+
+网页 `conversation_id` / `message_id` 是正整数，与 MCP 研究的 UUID `task_id`
+以及深研 `session_id` 分别管理。`submit_deep_research` 不自动创建网页会话；
+本组工具不提供新建网页会话或重新生成回答入口。
+
+#### `list_kb_conversations` — 列出本人的网页知识库会话
+
+参数 `limit` 默认 20、范围 1–100；`cursor` 默认空串，后续原样使用 `next_cursor`。
+返回 `conversations[]`，按更新时间倒序分页。只读取本人的网页会话，不提交研究。
+
+#### `get_kb_conversation` — 读取网页会话消息
+
+必填 `conversation_id` 来自会话列表；`limit` 默认 20、范围 1–100；`cursor`
+默认空串。按时间顺序返回 `messages[]`，保留完整正文；`has_more=true` 时用
+`next_cursor` 继续。消息 `id` 可用于后续编辑、分享或停止生成，不能当成研究 task_id。
+
+#### `delete_kb_conversation` — 删除网页会话
+
+必填 `conversation_id`；`confirm_delete` 默认 false，只有用户明确要求删除时才传
+`true`。软删除本人会话及消息，不删除或取消 MCP 研究任务，不请求退款。
+**已经公开的分享快照会独立保留**：删除前用 `manage_kb_shares` 列出分享并按需撤销。
+
+#### `update_kb_message` — 编辑网页知识库消息
+
+必填 `message_id` 与 `changes`。`changes` 至少提供 `content`（正文，≤400000字）
+或 `versions`（最多 20 个正文字符串，每项≤400000字）。生成中的消息必须先请求停止
+并读取确认终态。编辑不重新生成、不运行研究，也不补造原回答来源。
+
+#### `share_kb_content` — 创建公开分享快照
+
+必填 `target:"conversation"|"message"` 与 `resource_id`（相应会话或助手消息的正整数ID）；
+`make_public` 默认 false。**任何持有链接的人均可免登录阅读**，只有用户明确要求
+公开分享时才传 `make_public:true`。返回 30 天有效快照的 `share_url` 与 `expires_at`。
+每次调用都会创建新链接，不能盲目自动重放；超时先查 `manage_kb_shares` 核对。
+
+#### `manage_kb_shares` — 查询或撤销分享
+
+参数 `action:"list"|"revoke"`、`resource_id`。`list` 时 ID 是网页会话 ID，返回尚未
+过期的 `shares[]`；`revoke` 时 ID 是列表返回的分享 ID，使对应链接立即失效。
+它不会新建分享。已删除会话的残留分享也可按返回的分享 ID 撤销。
+
+#### `stop_kb_generation` — 请求停止网页知识库流式消息
+
+参数 `message_id` 来自 `get_kb_conversation` 的助手消息，仅支持当前服务进程登记的
+网页流式生成句柄。读取返回状态：
+
+- `cancel_requested`：已发出停止信号；仍需重新读取消息确认是否结束。
+- `not_running`：消息已经结束。
+- `not_cancellable_here`：当前进程没有可取消的句柄；不能把它解释为已停止。
+
+**它不支持 MCP task_id 或 AI 异步任务取消，不请求积分退款。** 关闭客户端也不能
+证明异步研究已停止。没有可取消句柄时保留原任务并按原路径查询，不伪造终态。
+
+#### `get_hot_notes` — 检索热点纪要历史与正文
+
+参数 `date` 默认空串（可传 `YYYY-MM-DD`）、`cursor` 默认空串、`limit` 默认 50
+且范围 1–100、`note_id` 默认 0。无 note_id 时按日期/编号倒序返回 `items[]`
+与 `next_cursor`，继续翻页时保留原日期；空游标表示末页。
+
+`note_id>0` 时读取相应纪要正文 `paragraphs[]`，不可同时传日期或游标。
+这批已发布热点纪要与 `get_info_feed` 的当前市场摘要、`submit_notes_report`
+新生成的研究纪要是不同数据，不把历史内容写成实时新闻。
+
 ## 4. 异步任务模式(research 类完整生命周期)
 
 ```
-submit_deep_research / submit_stock_screen / submit_notes_report
+submit_deep_research / submit_stock_screen / submit_notes_report / submit_company_roundtable
         │  秒级返回原任务回执 task_id(受理状态可能待确认)
         ▼
 get_research_task(task_id) ──► running(带 progress 阶段描述)──► 继续轮询
@@ -879,6 +971,7 @@ get_research_task(task_id) ──► running(带 progress 阶段描述)──►
 | 深度研究 | `pro` | 约 8–12 分钟 | ≥30 秒 |
 | 产业链量化选股 | — | 约 3–8 分钟 | ≥60 秒 |
 | 深度纪要报告 | — | 约 8–15 分钟 | ≥60 秒 |
+| 多公司报告横向研究 | — | 按公司与材料规模变化，以回执指引为准 | 按 next_step，建议≥30 秒 |
 
 **实践建议**:
 
@@ -906,14 +999,14 @@ get_research_task(task_id) ──► running(带 progress 阶段描述)──►
 
 ### research 类工具与账号用量
 
-research 三个提交工具(`submit_deep_research` / `submit_stock_screen` /
-`submit_notes_report`)
+research 四个提交工具(`submit_deep_research` / `submit_stock_screen` /
+`submit_notes_report` / `submit_company_roundtable`)
 除上表的 key 日额度外,**还消耗 API key 所绑定账号的使用额度**,与该账号在网页端
 的用量算在一起。新业务会运行对应的研究或选股流程；同键同参重放返回原任务，不重复扣本次账号用量。因此:
 
 - **API key 必须绑定账号**才能调用 research 类工具。未绑定时返回
   `error: "该 API key 未绑定用户,无法使用研究类工具;请联系 ADAMAS 为 key 绑定账号"`
-  ——data 类工具不受此限制,可照常使用;
+  ——部分公开 data 查询不受此限制；网页知识库与热点历史仍须绑定有效账号，知识库另须开通网页能力;
 - **`submit_deep_research` 选 `mode="pro"` 时用量按 2 倍计**(与网页端知识库的 Pro 单次问答模式一致，不是订阅档位),
   其余档位(`auto`/`flash`/`plus`)按 1 倍;
 - **已确认失败的任务会按服务端结算逻辑退回本次用量**；客户端断开本身不代表任务失败或退款，恢复 task_id 后查询终态。**成功产出的任务不退**——包括你觉得结果不理想的情况;
@@ -962,7 +1055,7 @@ research 三个提交工具(`submit_deep_research` / `submit_stock_screen` /
 ### 7.2 WorkBuddy / OpenClaw / Kimi Code Skill 包
 
 Skill 包与本文档一起发布在**公开接入仓库** <https://github.com/felixhjh-2/adamas-mcp-connect>
-(路径 `plugins/adamas-research-report/skills/adamas-research-report/`),内容为「ADAMAS 投研报告」方法论:先看地图再取数、代码先解析、全球宏观先拉覆盖全景再读正文、数据与观点分开取分开写、限流退避、成文规范(日期标注、三类内容区分、disclaimer 原文保留、六维趋势符号含义)以及六个常用剧本(行业跟踪简报/个股解读/全球宏观对比/产业链量化选股/深度专题报告/晨会纪要一页)。
+(路径 `plugins/adamas-research-report/skills/adamas-research-report/`),内容为「ADAMAS 投研报告」方法论:先看地图再取数、代码先解析、全球宏观先拉覆盖全景再读正文、数据与观点分开取分开写、限流退避、成文规范(日期标注、三类内容区分、disclaimer 原文保留、六维趋势符号含义)以及行业跟踪、公司横向研究、历史资料管理等常用剧本。
 
 安装方式:
 
