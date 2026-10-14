@@ -177,6 +177,13 @@ ADAMAS_API_KEY=<your-api-key> python examples/quickstart.py
 把研究问题外包给 ADAMAS 研究引擎、一键产出深度纪要 PDF。方法论详见 Skill。
 
 首次会话先查能力地图，批量调用或提交研究前用 `get_my_quota` 自查；它免日额度扣减，仍受请求频率限制。
+
+`POST /mcp` 的完整 UTF-8 JSON-RPC 请求体（协议字段及全部参数）最多 **1 MiB（1048576 bytes）**；可查看 `list_capabilities().transport.request_limits`。
+字段字符上限不等于完整请求字节上限，中文、emoji、JSON 转义和空白都计入实际传输字节。
+
+超限返回 HTTP 413，本次请求未进入工具业务；不能据此推断此前受理状态未知的提交未被受理，先核对原任务或原资源。
+不自动截断文本、丢弃 history 或 versions，也不换键重投写入或收费操作。大文本可用网页编辑，或由用户明确缩小输入范围后再操作。
+
 研究提交回执丢失时，先用 `list_my_research_tasks` 找回 task_id，再轮询。
 付费四个提交工具支持可选 `idem_key`（≤128 个 ASCII 字符，`[A-Za-z0-9][A-Za-z0-9_.:-]*`）：同一 key、同一工具内同键同完整业务参数返回原任务，不重复扣本次账号用量。深研 `session_id` 也必须一致；同键换参为 `BadParam`。无键每次 RPC 仍新建意图，但回执与本版本创建任务的轮询会返回生成的 `auto:<UUIDhex>` 恢复键；丢回执先历史找 task_id，再轮询取键，需要恢复提交时显式传返回键与完整原参数。轮询不会自动重新派发付费任务，新键不等于恢复原任务。 持久付费任务还匹配原绑定账号；改绑不转让历史，更换账号应重新签发 key。旧游标失效时从第一页重取。
 回执新增 `idempotency_persisted`，可能带 `progress` / `task_status`；这不证明研究引擎已受理。状态未知先查历史/轮询，不能盲目重投或推断已退款。

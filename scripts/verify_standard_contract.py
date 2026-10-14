@@ -495,6 +495,12 @@ def main() -> None:
             require(marker in document, f"正式契约缺 {marker}")
         for stale in ("候选契约", "候选版本", "尚未发布", "本候选"):
             require(stale not in document, f"当前文档仍标为未正式发布: {stale}")
+        for marker in ("POST /mcp", "UTF-8 JSON-RPC", "1 MiB（1048576 bytes）", "list_capabilities().transport.request_limits",
+                       "字段字符上限不等于完整请求字节上限", "中文、emoji、JSON 转义", "HTTP 413",
+                       "本次请求未进入工具业务", "不能据此推断此前受理状态未知的提交未被受理",
+                       "不自动截断文本、丢弃 history 或 versions", "不换键重投写入或收费操作", "网页编辑",
+                       "用户明确缩小输入范围"):
+            require(marker in document, f"公开完整请求大小或安全恢复说明缺 {marker}")
     for marker in ("next_cursor", "has_more", "file_mtime", "source_updated_at",
                    "matched_node_ids", "context_node_ids", "ambiguous", "citation_note",
                    "download_links_status", "idempotency_persisted", "task_status",

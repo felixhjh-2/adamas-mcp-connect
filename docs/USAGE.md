@@ -288,6 +288,7 @@ asyncio.run(main())
 | `industry_catalog` | **全部产业名**(约190个),产业类工具唯一有效的取值集合 —— 详见 `get_industry_scores` 一节的名称口径 |
 | `freshness` | Standard 可见数据域的最新截止日:`model_picks_as_of`、`company_reports_latest` |
 | `service` | `contract_version`、当前授权 `tools[]`、`workflows[]` 与 `usage` 指引。工具项包含 `name`、中文 `title`、`execution`、`quota`、`may_charge_credits`、`required_arguments`、`read_only`；精确类型与约束以 `tools/list` schema 为准 |
+| `transport.request_limits` | 完整请求体限制：`method:"POST"`、`path:"/mcp"`、`max_body_bytes:1048576`、`encoding:"utf-8"`；超限 `exceeded_http_status:413`。字段字符限制不能覆盖此上限；agent 不自动截断、丢版本或重投写入 |
 | `meta.note` | 口径说明 |
 
 **示例**:
@@ -1098,6 +1099,12 @@ Bearer 连接，删除旧连接后按 2.3 节的 OAuth 命令重新添加，再�
 
 **Q:收到 HTTP 429?**
 频率超限(每分钟调用数)走 HTTP 429,响应带标准 `Retry-After` 头和 `retry_after_seconds` 字段,按其中任一等待后重试即可。注意频率是按**每个 HTTP 请求**计的,连接握手、列工具等协议请求也计入。
+
+**Q:字段字符数没有超限，为什么仍收到 HTTP 413?**
+`POST /mcp` 的完整 UTF-8 JSON-RPC 请求体（协议字段及全部参数）最多 **1 MiB（1048576 bytes）**；可查看 `list_capabilities().transport.request_limits`。
+字段字符上限不等于完整请求字节上限，中文、emoji、JSON 转义和空白都计入实际传输字节；多个字段和 history 也共同占用同一请求体上限。
+超限返回 HTTP 413，本次请求未进入工具业务；不能据此推断此前受理状态未知的提交未被受理，先核对原任务历史或原资源，不能据此断言旧任务取消或退款。
+不自动截断文本、丢弃 history 或 versions，也不换键重投写入或收费操作。大文本可用网页编辑，或由用户明确缩小输入范围后再操作。
 
 **Q:任务 `failed`,错误是「任务超时未完成(服务可能重启过),请重新提交」?**
 这条错误对应旧版遗留任务的 1 小时 TTL 处理，仅在原 task_id 已实际返回 `failed` 终态时适用，不能用来判断新版受理未知的任务。新版确认尚未派发的意图若安全过期，也以原任务返回的错误与 `recovery` 为准；已经发出请求但受理未知的任务不会仅因超过 1 小时就判失败或退款。先确认原任务终态及恢复指引，明确决定再次生成才发起新业务，不自动重投；新业务会正常消耗 research 提交额度。

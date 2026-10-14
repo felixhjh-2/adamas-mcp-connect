@@ -53,6 +53,7 @@ description: 用 ADAMAS 投研数据写专业研究报告/晨会纪要/行业跟
 4. **额度与恢复先自查**:批量调用或提交前用 `get_my_quota`(免日扣减，仍计 RPM)；提交回执丢失先用 `list_my_research_tasks` 恢复 task_id，再轮询，不能直接重复付费提交。历史支持 limit/status/kind/cursor，翻页保留原筛选；只读落库摘要，不代表上游最新状态。
    四个付费提交工具支持可选 `idem_key`：非空须 ≤128 个 ASCII 字符，匹配 `[A-Za-z0-9][A-Za-z0-9_.:-]*`。同一 API key、同一工具内，同键与完整业务参数一致时返回原任务、不重复扣本次账号用量；深研 `session_id` 也纳入业务参数。换参冲突为 `BadParam`，新业务用新键；新键不等于恢复原任务。无键兼容每次 RPC 新建意图，但回执与本版本创建任务的轮询会返回生成的 `auto:<UUIDhex>` 恢复键。丢回执先历史找 task_id，再轮询取键；需要恢复提交时，向同一工具显式传返回键与完整原参数。继续传空键仍是新意图，轮询不会自动重新派发付费任务。`idempotency_persisted:true` 表示提交意图已记录，受理可能待确认；先查历史/轮询，不盲重投，不推断已退款。按可选 `task_status` 与 `progress` 查看原任务提示，当前结果仍用轮询获取。
 5. **错误按恢复指引处理**:检查 `isError`、`error_class` 与 `recovery.action`，仅 `retry_safe=true` 才自动重放；按可选 `retry_after_seconds` 等待，不盲重试。
+6. **长文本先检查整次请求大小**：`POST /mcp` 的完整 UTF-8 JSON-RPC 请求体（协议字段及全部参数）最多 **1 MiB（1048576 bytes）**；查看 `list_capabilities().transport.request_limits`。字段字符上限不等于完整请求字节上限，中文、emoji、JSON 转义和空白都计入实际传输字节。超限返回 HTTP 413，本次请求未进入工具业务；不能据此推断此前受理状态未知的提交未被受理，先核对原任务或原资源。不自动截断文本、丢弃 history 或 versions，也不换键重投写入或收费操作。大文本可用网页编辑，或由用户明确缩小输入范围后再操作。
 
 ## 成文规范(必须遵守)
 
