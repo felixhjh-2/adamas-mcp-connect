@@ -28,6 +28,8 @@ STANDARD_TOOL_ORDER = (
     "submit_stock_screen",
     "submit_notes_report",
     "submit_company_roundtable",
+    "submit_kb_question",
+    "regenerate_kb_answer",
     "get_research_task",
     "list_my_research_tasks",
     "list_kb_conversations",
@@ -45,6 +47,8 @@ STANDARD_DATA_TOOLS = STANDARD_TOOLS - {
     "submit_stock_screen",
     "submit_notes_report",
     "submit_company_roundtable",
+    "submit_kb_question",
+    "regenerate_kb_answer",
 }
 STANDARD_PROMPTS = {"industry_brief", "deep_research_report"}
 
@@ -277,13 +281,13 @@ def main() -> None:
         f"README 工具速览漂移: {sorted(readme_tools)}",
     )
     require(
-        len(readme_tools) == len(STANDARD_TOOL_ORDER) == 26,
+        len(readme_tools) == len(STANDARD_TOOL_ORDER) == 28,
         f"Standard 工具计数漂移: README={len(readme_tools)} contract={len(STANDARD_TOOL_ORDER)}",
     )
     for document in (readme, usage):
-        require("26 个工具" in document, "公开文档缺 Standard 26 工具口径")
+        require("28 个工具" in document, "公开文档缺 Standard 28 工具口径")
         counts = re.findall(r"(?<!\d)(\d+)\s*个(?:对外|投研)?工具", document)
-        require(bool(counts) and set(counts) == {"26"}, f"公开文档工具数不一致: {counts}")
+        require(bool(counts) and set(counts) == {"28"}, f"公开文档工具数不一致: {counts}")
         for stale_count in ("13", "14", "15", "17"):
             require(
                 stale_count + " 个工具" not in document,
@@ -430,7 +434,7 @@ def main() -> None:
             "Kimi Code Skill 安装路径缺失",
         )
     require(len(STANDARD_DATA_TOOLS) == 22, "data 类精确计数漂移")
-    require("22 个 data 类入口 + 4 个 research 提交工具" in usage, "工具分类计数漂移")
+    require("22 个 data 类入口 + 6 个 research 提交工具" in usage, "工具分类计数漂移")
     for document in (usage, skill):
         for marker in (
             "get_global_macro()",
@@ -505,7 +509,7 @@ def main() -> None:
         "公开文档引用了不存在的生产脚本",
     )
     for document in (readme, usage, skill):
-        for marker in ("2.5.0", "接入材料", "get_my_quota", "list_my_research_tasks",
+        for marker in ("2.6.0", "接入材料", "get_my_quota", "list_my_research_tasks",
                        "recovery", "retry_safe", "content_status", "stale", "doc_id_mapping"):
             require(marker in document, f"正式契约缺 {marker}")
         for stale in ("候选契约", "候选版本", "尚未发布", "本候选"):
@@ -522,7 +526,7 @@ def main() -> None:
                    "download_links_status", "idempotency_persisted", "task_status",
                    "[A-Za-z0-9][A-Za-z0-9_.:-]*", "新键不等于恢复原任务"):
         require(marker in usage, f"正式使用文档缺 {marker}")
-    for tool in ("submit_deep_research", "submit_stock_screen", "submit_notes_report", "submit_company_roundtable"):
+    for tool in ("submit_deep_research", "submit_stock_screen", "submit_notes_report", "submit_company_roundtable", "submit_kb_question", "regenerate_kb_answer"):
         section = usage.split(f"#### `{tool}`", 1)[1].split("\n#### `", 1)[0]
         require("| `idem_key` | string | 否 | 空串 |" in section,
                 f"付费提交缺可选幂等参数: {tool}")
@@ -535,12 +539,32 @@ def main() -> None:
                        "share_kb_content", "manage_kb_shares", "stop_kb_generation",
                        "not_cancellable_here"):
             require(marker in document, f"新增 Standard 能力或停止边界缺 {marker}")
-    require("四个付费提交工具" in skill, "Skill 付费提交数量漂移")
+    require("六个付费提交工具" in skill, "Skill 付费提交数量漂移")
     require("data 类不等于只读" in usage, "网页写操作未说明配额分类和副作用的区别")
-    require("不自动创建网页会话" in usage and "不支持 MCP task_id 或 AI 异步任务取消" in usage,
+    require("不自动创建网页会话" in usage and "不支持普通深研 task_id 或通用 AI 异步任务取消" in usage,
             "网页会话与异步任务边界不清")
     require("已经公开的分享快照会独立保留" in usage and "make_public:true" in usage,
             "公开分享确认或独立快照边界缺失")
+    for document in (readme, usage, skill):
+        for marker in ("submit_kb_question", "regenerate_kb_answer", "generation_id",
+                       "include_original_native=true", "读取不自动恢复", "agent_steps",
+                       "最近 3 轮", "最近 5 版", "部分新回答", "刷新工具列表",
+                       "2026-10-14.2", "original_native_offset=0", "original_native_snapshot_chunk",
+                       "next_offset", "base64", "bytes", "snapshot_sha256",
+                       "total_bytes", "不能逐页先解码 UTF-8", "≤262144 bytes",
+                       "小对象只接受offset=0", "offset达到或超过total_bytes",
+                       "保留原 generation_id", "不要省略 generation_id 降级为消息级停止"):
+            require(marker in document, f"原生知识库安全使用说明缺 {marker}")
+        for stale in ("不提供新建网页会话或重新生成回答入口", "仅网页可取消消息",
+                      "四个付费提交工具"):
+            require(stale not in document, f"原生知识库仍有旧能力边界: {stale}")
+    task_section = usage.split("#### `get_research_task`", 1)[1].split("\n#### `", 1)[0]
+    require("| `original_native_offset` | int | 否 | 0 |" in task_section,
+            "快照分页缺可选字节偏移参数表")
+    require("snapshot_only" in usage and "recovery_snapshot_id" in usage,
+            "完整快照只读与恢复标识缺失")
+    require("`generation_id`" in usage.split("#### `stop_kb_generation`", 1)[1].split("\n#### `", 1)[0],
+            "停止工具缺可选轮次字段")
     verify_boundary_self_checks()
     verify_public_boundary()
 
@@ -561,12 +585,12 @@ def main() -> None:
             encoding="utf-8"
         )
     )
-    require(plugin["version"] == "2.5.0", "插件材料版本未升级到 2.5.0")
-    require("## 2026-10-14 · 2.5.0 接入材料" in changelog, "CHANGELOG 缺本次材料版本记录")
+    require(plugin["version"] == "2.6.0", "插件材料版本未升级到 2.6.0")
+    require("## 2026-10-14 · 2.6.0 接入材料" in changelog, "CHANGELOG 缺本次材料版本记录")
     for manifest_text in (plugin["description"], marketplace["plugins"][0]["description"]):
-        require("26" in manifest_text and "2.5.0 接入材料" in manifest_text
+        require("28" in manifest_text and "2.6.0 接入材料" in manifest_text
                 and "候选" not in manifest_text and "尚未发布" not in manifest_text,
-                "插件清单缺 Standard 26 工具正式口径")
+                "插件清单缺 Standard 28 工具正式口径")
         require("全球宏观" in manifest_text, "插件清单缺全球宏观能力")
     require(marketplace["plugins"][0]["name"] == plugin["name"], "marketplace/plugin 名称漂移")
     require("adamas" in mcp["mcpServers"], "插件缺 adamas MCP 配置")

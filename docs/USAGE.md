@@ -1,6 +1,6 @@
 # ADAMAS MCP 使用文档
 
-> **接入材料（2.5.0，2026-10-14）**：当前可用工具与参数以 `tools/list`、`prompts/list` 和 `list_capabilities().service` 为准。
+> **接入材料（2.6.0，2026-10-14）**：当前可用工具与参数以 `tools/list`、`prompts/list` 和 `list_capabilities().service` 为准。
 
 > 面向外部集成方。读完本文即可把 ADAMAS 投研能力接进你自己的 agent / IDE / 办公工具。
 
@@ -32,7 +32,7 @@ remote MCP endpoint 与 `Authorization: Bearer` 请求头的客户端
 - **端点**:`https://www.adamas-research.com/mcp`
 - **传输**:MCP streamable HTTP(无状态,支持断线重连后重新调用)
 - **认证**:二选一 —— 每个请求携带 `Authorization: Bearer <your-api-key>`（API key 向 ADAMAS 申请），或使用客户端原生 OAuth 自动授权（public client + S256 PKCE，无需手工 key/secret）
-- **内容**:本公开主文档对应 Standard 档,**26 个工具**(22 个 data 类入口 + 4 个 research 提交工具，含额度自查与任务历史)+ 2 个预置 prompts + 1 个 Agent Skill 包。Standard 包含最新已发布的量化选股结果、产业链量化选股与全球宏观入口。本公开文档只描述 Standard 契约。
+- **内容**:本公开主文档对应 Standard 档,**28 个工具**(22 个 data 类入口 + 6 个 research 提交工具，含额度自查与任务历史)+ 2 个预置 prompts + 1 个 Agent Skill 包。Standard 包含最新已发布的量化选股结果、产业链量化选股与全球宏观入口。本公开文档只描述 Standard 契约。
 
 两类工具的契约有本质区别,集成前务必理解(详见第 3、6 节):
 
@@ -697,7 +697,7 @@ components:{market, style, macro}}`,rank 越小越靠前,`percentile` 为 0–10
 
 research 类与 data 类的契约区别:**结果含模型生成的分析观点**;走独立的日额度(默认每 key 每日 20 次提交)与全局并发闸;均为异步——提交秒回 `task_id`,用 `get_research_task` 轮询;结果强制附 `disclaimer`,**引用必须原文保留**。
 
-**付费提交幂等**：四个提交工具均新增可选 `idem_key`，为空或省略时保留每次 RPC 创建新提交意图的旧行为。非空键必须为 1–128 个 ASCII 字符，匹配 `[A-Za-z0-9][A-Za-z0-9_.:-]*`。在同一 API key、同一工具内，同键与完整业务参数一致时返回原任务，不重复扣本次账号用量；跨 key 或跨工具不能恢复原任务。深度研究的 `question`、`mode`、`session_id` 都影响业务，重放必须保持一致。追问使用同一 session_id、不同 question 时是新业务，应使用新 idem_key。
+**付费提交幂等**：六个提交工具均新增可选 `idem_key`，为空或省略时保留每次 RPC 创建新提交意图的旧行为。非空键必须为 1–128 个 ASCII 字符，匹配 `[A-Za-z0-9][A-Za-z0-9_.:-]*`。在同一 API key、同一工具内，同键与完整业务参数一致时返回原任务，不重复扣本次账号用量；跨 key 或跨工具不能恢复原任务。深度研究的 `question`、`mode`、`session_id` 都影响业务，重放必须保持一致。追问使用同一 session_id、不同 question 时是新业务，应使用新 idem_key。
 
 同键换参返回 MCP 工具错误 `error_class="BadParam"`，不是 HTTP 409；恢复原任务须保留原键和原参数，明确提交新业务才使用新键。**新键不等于恢复原任务**。回执丢失或受理状态未知时，先用 `list_my_research_tasks` 找回 task_id，再用 `get_research_task` 查询原任务；不要盲目重投、换键或推断任务已取消、已退款。
 
@@ -818,9 +818,42 @@ research 类与 data 类的契约区别:**结果含模型生成的分析观点**
 
 ---
 
+#### `submit_kb_question` — 原生网页知识库新建与续问
+
+需本人有效绑定账号同时拥有 MCP 与知识库权限。新建或续问真实网页知识库会话，后续可在网页继续查看与提问；它与不自动创建网页会话的 `submit_deep_research` 分开。
+
+| 名称 | 类型 | 必填 | 默认 | 说明 |
+|---|---|---|---|---|
+| `question` | string | 是 | — | 原字符串 1–2000 个 Unicode 字符，去除首尾空白后不得为空；不接受 NUL 或无效 Unicode |
+| `conversation_id` | int | 否 | 0 | 0 新建会话；正整数续问本人未删除会话 |
+| `mode` | string | 否 | `auto` | `auto` / `flash` / `plus` / `pro`；pro 消耗 2 倍账号用量 |
+| `idem_key` | string | 否 | 空串 | 可选幂等键，恢复原意图必须保留原键与全部参数 |
+
+返回原 `task_id`（UUID）与同轮 `generation_id`；受理待确认时原生标识可能尚未返回，确认后提供正整数 `conversation_id` / `message_id` 与停止指引。用原 task_id 轮询，不把网页数字 ID 当作任务 UUID。服务从本人会话最近 3 轮已完成问答构造上下文；每轮问题截取至 2000 个 Unicode 字符、回答至 500 个 Unicode 字符，仅用于上下文，不改写已保存正文。调用方不传 session_id 或 history。
+
+网页和 MCP 后续提问在同一会话连续使用上述历史；空历史明确为空，不读取另一个隐式会话。生成中的会话不能并发开启下一轮，等待终态后再续问。
+
+---
+
+#### `regenerate_kb_answer` — 重新生成最新原生回答
+
+只支持本人未删除会话中最新且已结束的助手消息；服务使用该回答对应的原问题，不允许调用方替换问题，也不从请求另选会话。
+
+| 名称 | 类型 | 必填 | 默认 | 说明 |
+|---|---|---|---|---|
+| `message_id` | int | 是 | — | 本人会话最新已结束助手消息的正整数 ID |
+| `mode` | string | 否 | `auto` | `auto` / `flash` / `plus` / `pro`；pro 消耗 2 倍账号用量 |
+| `idem_key` | string | 否 | 空串 | 可选幂等键，重放保持原消息 ID 与模式 |
+
+保留原 task_id / generation_id；原生 conversation_id / message_id 在受理确认后返回，待确认时不能假定已经建好消息。上下文规则同新提问，但排除目标回答，避免把待重写答案当作历史。提交前独立保存原 content、agent_steps 与完整 versions；没有产生新回答时自动原样回退，有部分新回答则保存为新版本并计入本次用量。网页显示最近 5 版，原始完整快照独立保留，不能把可见版本截取误认为完整快照已被删除。
+
+需要核对原版时，显式调用 `get_research_task(task_id=原任务, include_original_native=true)`。只读取原快照供核对及恢复所需数据；读取不自动恢复、重跑或再次结算。手动恢复 content / versions 必须由用户明确选择并满足编辑限额，`update_kb_message` 不支持 agent_steps，因此不能承诺完整恢复所有字段。原会话删除后，读取快照不会重建会话。
+
+---
+
 #### `get_research_task` — 轮询异步任务
 
-**用途**:查询 `submit_deep_research` / `submit_stock_screen` / `submit_notes_report` / `submit_company_roundtable`
+**用途**:查询 `submit_deep_research` / `submit_stock_screen` / `submit_notes_report` / `submit_company_roundtable` / `submit_kb_question` / `regenerate_kb_answer`
 提交的任务状态与结果。**只能查询当前 API key 自己提交的任务；持久付费任务还须匹配提交时的绑定账号**。修改绑定不转让历史；更换账号应联系服务方撤销旧 key 并重新发 key。此调用计入
 data 类配额(rpm/日额度),**不消耗 research 日额度**——放心轮询,但请遵守建议间隔。
 
@@ -829,6 +862,8 @@ data 类配额(rpm/日额度),**不消耗 research 日额度**——放心轮询
 | 名称 | 类型 | 必填 | 默认 | 说明 |
 |---|---|---|---|---|
 | `task_id` | string | 是 | — | 提交时返回的任务 ID(UUID) |
+| `include_original_native` | bool | 否 | false | 仅原生重新生成任务：显式读取原回答快照，普通轮询省略 |
+| `original_native_offset` | int | 否 | 0 | 快照 UTF-8 JSON 的字节偏移；仅 include_original_native=true 可非零。首请求0，后续原样传 next_offset；须为int64非负整数，不能传bool或小数 |
 
 **返回结构要点**(按状态):
 
@@ -839,6 +874,24 @@ data 类配额(rpm/日额度),**不消耗 research 日额度**——放心轮询
 | `failed` | `{task_id, status: "failed", error: "<原因>"}` |
 
 本版本创建的付费任务还返回 `idem_key` 与 `idempotency_persisted:true`；即使提交时省略或传空键，也可先查历史找到 task_id，再轮询取得生成的 `auto:<UUIDhex>` 恢复键。历史只提供任务定位，恢复提交须向同一工具显式传该键与完整原参数，轮询不会自动重新派发。旧任务可能没有这些字段。
+
+原生任务保留原 task_id 与原生 conversation_id / message_id / generation_id。完成结果可能为部分交付；以返回的 completion（complete / stopped / failed / worker_lost）/ partial 和正文为准，不把部分回答当作完整成功，也不把停止请求当作终态。新回答已部分交付仍计入账号用量。仅轮询原任务，不为等待或观察失败创建新任务。
+
+`include_original_native=true` 仅适用于原重新生成任务且每页仍须匹配原 key、原绑定账号与有效授权。返回 snapshot_only=true；普通轮询不自动返回大快照。该分支保留已存 pending / running / done / failed 状态，不刷新生成状态，不写回网页消息、不重新派发、不触发结算，不能用快照状态断言当前生成已经完成。
+
+完整原快照 JSON ≤262144 bytes 时，offset=0 返回 original_native_snapshot 对象；大对象返回 original_native_snapshot_chunk，包含 total_bytes、snapshot_sha256、chunk_offset、next_offset、encoding:"base64-json-utf8"、data（base64），以及 conversation_id / message_id / recovery_snapshot_id / versions_trimmed。
+
+每页调用计入data配额与请求频率，不消耗research提交额度。每页原始bytes最多262144（base64最多349528字符）。小对象只接受offset=0；offset达到或超过total_bytes返回BadParam，不能用手算偏移跳过终页判断。
+
+读取大快照按以下步骤进行：
+
+1. 首请求 original_native_offset=0，显式 include_original_native=true；核对原任务和恢复标识。
+2. 每页将 data 按 base64 解码为 bytes，按 chunk_offset 累积；下一次传原样 next_offset，它是 UTF-8 **字节偏移**，不是字符数。next_offset=null 才是终页。
+3. 每页核对同一 conversation_id / message_id / recovery_snapshot_id / snapshot_sha256 / total_bytes。累计字节数必须等于 total_bytes，整体 SHA-256 必须等于 snapshot_sha256；失败就停止，不用不完整材料恢复。
+4. 校验通过后才一次 UTF-8 解码并 JSON 解析。不能逐页先解码 UTF-8，分片可能切在中文或 emoji 字节中间，也不能把每页当完整 JSON。
+
+原快照内 content / agent_steps / versions 保留完整原字符串及各字段字节数；versions 非空且合法时再解析其 JSON，不自动修复或丢弃旧数据。大快照不可变 JSON 含原正文、步骤、版本、字节数及原生/恢复标识，不含页外的 versions_trimmed；后者可随任务终态变化，不能参与拼接快照的校验。此读取只提供核对及恢复所需数据，不自动恢复；手动编辑仍受 content / versions 限额，不能经 update_kb_message 恢复 agent_steps。
+
 
 `done` 时的 `result` 结构:
 
@@ -875,7 +928,7 @@ data 类配额(rpm/日额度),**不消耗 research 日额度**——放心轮询
 |---|---|---|---|
 | `limit` | int | 10 | 每页 1–50 条 |
 | `status` | string \| null | `null`（可省略） | 不筛选，或 `pending` / `running` / `done` / `failed` |
-| `kind` | string \| null | `null`（可省略） | 不筛选，或 `deep_research` / `notes_report` / `stock_screen` / `company_roundtable` |
+| `kind` | string \| null | `null`（可省略） | 不筛选，或 `deep_research` / `notes_report` / `stock_screen` / `company_roundtable` / `native_kb` |
 | `cursor` | string | 空串 | 下一页使用上页 `next_cursor`，保持原 status / kind |
 
 不筛选时省略 `status` / `kind` 或传 `null`，不要传空字符串；`cursor` 的默认值仍为空字符串。
@@ -890,7 +943,7 @@ data 类配额(rpm/日额度),**不消耗 research 日额度**——放心轮询
 
 网页 `conversation_id` / `message_id` 是正整数，与 MCP 研究的 UUID `task_id`
 以及深研 `session_id` 分别管理。`submit_deep_research` 不自动创建网页会话；
-本组工具不提供新建网页会话或重新生成回答入口。
+新建或续问使用 research 类 `submit_kb_question`，重新生成使用 `regenerate_kb_answer`；本节管理工具本身不提交生成。
 
 #### `list_kb_conversations` — 列出本人的网页知识库会话
 
@@ -901,12 +954,13 @@ data 类配额(rpm/日额度),**不消耗 research 日额度**——放心轮询
 
 必填 `conversation_id` 来自会话列表；`limit` 默认 20、范围 1–100；`cursor`
 默认空串。按时间顺序返回 `messages[]`，保留完整正文；`has_more=true` 时用
-`next_cursor` 继续。消息 `id` 可用于后续编辑、分享或停止生成，不能当成研究 task_id。
+`next_cursor` 继续。消息 `id` 可用于后续编辑、分享或停止生成，不能当成研究 task_id。含原生生成的消息可带当前最新 generation_id，停止时应使用本轮标识。
 
 #### `delete_kb_conversation` — 删除网页会话
 
 必填 `conversation_id`；`confirm_delete` 默认 false，只有用户明确要求删除时才传
 `true`。软删除本人会话及消息，不删除或取消 MCP 研究任务，不请求退款。
+有活动生成时拒绝删除，先请求停止并确认终态。删除不抹去独立研究回执或原回答恢复快照，读取快照不会恢复已删除的会话。
 **已经公开的分享快照会独立保留**：删除前用 `manage_kb_shares` 列出分享并按需撤销。
 
 #### `update_kb_message` — 编辑网页知识库消息
@@ -917,7 +971,7 @@ data 类配额(rpm/日额度),**不消耗 research 日额度**——放心轮询
 含括号、引号、转义、逗号和空格。非ASCII字符不转义，元素之间用逗号加一个空格分隔。
 这些字段限制同时生效，仍须满足完整 UTF-8 JSON-RPC 请求体的 1 MiB 上限；
 字段总字符数合法不保证最终请求字节数合法。生成中的消息必须先请求停止并读取确认终态。
-编辑不重新生成、不运行研究，也不补造原回答来源。
+编辑不重新生成、不运行研究，也不补造原回答来源；不能编辑 agent_steps，不能声称通过它完整恢复原回答所有字段。
 
 #### `share_kb_content` — 创建公开分享快照
 
@@ -932,17 +986,17 @@ data 类配额(rpm/日额度),**不消耗 research 日额度**——放心轮询
 过期的 `shares[]`；`revoke` 时 ID 是列表返回的分享 ID，使对应链接立即失效。
 它不会新建分享。已删除会话的残留分享也可按返回的分享 ID 撤销。
 
-#### `stop_kb_generation` — 请求停止网页知识库流式消息
+#### `stop_kb_generation` — 按轮次请求停止知识库生成
 
-参数 `message_id` 来自 `get_kb_conversation` 的助手消息，仅支持当前服务进程登记的
-网页流式生成句柄。读取返回状态：
+参数 `message_id` 为助手消息正整数 ID；可选 `generation_id` 为本次生成 UUID，默认空串。原生 MCP 任务总是传回执的原 generation_id，不能拿旧轮次停止后来的重新生成。旧网页流可省略此字段，仍仅按旧流句柄处理。
 
-- `cancel_requested`：已发出停止信号；仍需重新读取消息确认是否结束。
-- `not_running`：消息已经结束。
-- `not_cancellable_here`：当前进程没有可取消的句柄；不能把它解释为已停止。
+指定原轮停止被旧服务拒绝时，保留原 generation_id 并查询原任务；不要省略 generation_id 降级为消息级停止，也不要换成后续轮次的标识。等待服务更新或联系支持，拒绝不证明该轮已停止。
 
-**它不支持 MCP task_id 或 AI 异步任务取消，不请求积分退款。** 关闭客户端也不能
-证明异步研究已停止。没有可取消句柄时保留原任务并按原路径查询，不伪造终态。
+- `cancel_requested`：已请求停止；仍需查询原任务或消息确认终态。
+- `not_running`：该轮已经结束或不在运行，不会转而停止后续轮次。
+- `not_cancellable_here`：当前服务没有可取消句柄；不能解释为已停止。
+
+停止不等于退款；已有部分新回答时保留为新版本并计入用量，没有新回答的重新生成由服务端原样回退。它不支持普通深研 task_id 或通用 AI 异步任务取消，不请求积分退款。关闭客户端也不能证明任务已停止。确认终态之前保留原任务及原幂等键，不另起任务绕过等待。
 
 #### `get_hot_notes` — 检索热点纪要历史与正文
 
@@ -957,7 +1011,7 @@ data 类配额(rpm/日额度),**不消耗 research 日额度**——放心轮询
 ## 4. 异步任务模式(research 类完整生命周期)
 
 ```
-submit_deep_research / submit_stock_screen / submit_notes_report / submit_company_roundtable
+submit_deep_research / submit_stock_screen / submit_notes_report / submit_company_roundtable / submit_kb_question / regenerate_kb_answer
         │  秒级返回原任务回执 task_id(受理状态可能待确认)
         ▼
 get_research_task(task_id) ──► running(带 progress 阶段描述)──► 继续轮询
@@ -977,6 +1031,7 @@ get_research_task(task_id) ──► running(带 progress 阶段描述)──►
 | 产业链量化选股 | — | 约 3–8 分钟 | ≥60 秒 |
 | 深度纪要报告 | — | 约 8–15 分钟 | ≥60 秒 |
 | 多公司报告横向研究 | — | 按公司与材料规模变化，以回执指引为准 | 按 next_step，建议≥30 秒 |
+| 原生知识库提问/重新生成 | auto / flash / plus / pro | 以实际回执指引为准 | 按 next_step，间隔≥30 秒 |
 
 **实践建议**:
 
@@ -1004,17 +1059,17 @@ get_research_task(task_id) ──► running(带 progress 阶段描述)──►
 
 ### research 类工具与账号用量
 
-research 四个提交工具(`submit_deep_research` / `submit_stock_screen` /
-`submit_notes_report` / `submit_company_roundtable`)
+research 六个提交工具(`submit_deep_research` / `submit_stock_screen` /
+`submit_notes_report` / `submit_company_roundtable` / `submit_kb_question` / `regenerate_kb_answer`)
 除上表的 key 日额度外,**还消耗 API key 所绑定账号的使用额度**,与该账号在网页端
 的用量算在一起。新业务会运行对应的研究或选股流程；同键同参重放返回原任务，不重复扣本次账号用量。因此:
 
 - **API key 必须绑定账号**才能调用 research 类工具。未绑定时返回
   `error: "该 API key 未绑定用户,无法使用研究类工具;请联系 ADAMAS 为 key 绑定账号"`
   ——部分公开 data 查询不受此限制；网页知识库与热点历史仍须绑定有效账号，知识库另须开通网页能力;
-- **`submit_deep_research` 选 `mode="pro"` 时用量按 2 倍计**(与网页端知识库的 Pro 单次问答模式一致，不是订阅档位),
+- **`submit_deep_research`、`submit_kb_question`、`regenerate_kb_answer` 选 `mode="pro"` 时用量按 2 倍计**(与网页端知识库的 Pro 单次问答模式一致，不是订阅档位),
   其余档位(`auto`/`flash`/`plus`)按 1 倍;
-- **已确认失败的任务会按服务端结算逻辑退回本次用量**；客户端断开本身不代表任务失败或退款，恢复 task_id 后查询终态。**成功产出的任务不退**——包括你觉得结果不理想的情况;
+- **已确认失败且没有新回答交付的原生任务按服务端结算逻辑退回本次账号用量及研究提交额度**；原生生成的部分新回答也计入用量，重新生成回退的原答案不算本轮新交付。客户端断开本身不代表任务失败或退款，恢复 task_id 后查询终态。**成功产出的任务不退**——包括你觉得结果不理想的情况;
 - 账号额度用尽时返回 `error: "今日使用已达上限，请联系工作人员"`,
   与 key 日额度是两套独立限制,任一撞上都会被拒;
 - 计费服务短暂不可用时 research 类工具会**拒绝提交**(返回
@@ -1147,3 +1202,5 @@ Bearer 连接，删除旧连接后按 2.3 节的 OAuth 命令重新添加，再�
 ---
 
 其他问题、申请 API key、提额、加 Host 白名单:联系 ADAMAS 团队。
+
+客户端可能缓存 tools/list；升级后若看不到新工具，先刷新工具列表或断开后重新连接，再检查当前 key 的授权发现。接入材料 2.6.0 与服务 contract_version `2026-10-14.2` 是不同版本标识。
