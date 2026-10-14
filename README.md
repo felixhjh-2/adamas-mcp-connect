@@ -1,9 +1,9 @@
 # ADAMAS MCP — 接入仓库
 
 > 把 ADAMAS 投研能力接进你自己的 AI:产业景气度、产业链传导图谱、公司跟踪、全球宏观、
-> 模型选股、每日信息流、深度研究与纪要生成 —— **一个 MCP 端点,Standard 档 17 个工具**。
+> 模型选股、每日信息流、深度研究与纪要生成 —— **一个 MCP 端点,Standard 档 26 个工具**。
 
-> **正式发布（2.4.0，2026-10-13）**：本文与配套 Skill 对应本版本的 Standard 契约。
+> **接入材料（2.5.0，2026-10-14）**：本文与配套 Skill 对应本版本的 Standard 契约。
 > 当前 key 实际可用工具和参数以 `tools/list`、`prompts/list` 与 `list_capabilities().service` 为准。
 
 - **端点**:`https://www.adamas-research.com/mcp`(remote MCP,streamable HTTP,无需安装任何服务)
@@ -159,16 +159,17 @@ python -m pip install "mcp>=1.28.1,<2"
 ADAMAS_API_KEY=<your-api-key> python examples/quickstart.py
 ```
 
-## 能做什么(Standard 档 17 个工具速览)
+## 能做什么(Standard 档 26 个工具速览)
 
 | 能力域 | 工具 |
 |---|---|
 | 资产解析 | `search_assets`(名称/代码 → 标准信息+行业分类) |
 | 产业 | `get_industry_scores`(景气度+六维趋势)`get_industry_graph`(产业链传导图谱)`get_industry_report`(报告 PDF) |
-| 公司 | `check_company_coverage`(批量查覆盖,支持代码/简称，歧义需确认)`get_company_tracking`(跟踪报告与历史目录，明示正文交付状态) |
+| 公司 | `submit_company_roundtable`(指定公司与报告期数的横向研究,异步);`check_company_coverage`(批量查覆盖,支持代码/简称，歧义需确认)`get_company_tracking`(跟踪报告与历史目录，明示正文交付状态) |
 | 全球宏观 | `get_global_macro`(国别九维度最新报告) |
 | 选股 | `get_model_picks`(最新已发布的量化选股 Top N);`submit_stock_screen`(产业链选股,异步) |
-| 信息流 | `get_info_feed`(最新文件摘要，明示日期与是否过期) |
+| 信息流与历史 | `get_info_feed`(最新文件摘要，明示日期与是否过期);`get_hot_notes`(按日期翻阅热点纪要及正文) |
+| 网页知识库 | `list_kb_conversations` `get_kb_conversation`(本人会话与消息);`update_kb_message` `delete_kb_conversation`(编辑或删除);`share_kb_content` `manage_kb_shares`(公开分享与撤销);`stop_kb_generation`(仅网页可取消消息) |
 | 研究成稿 | `submit_deep_research`(深度研究问答,异步)`submit_notes_report`(深度纪要+PDF,异步)`get_strategy_reports`(沙盘推演报告) |
 | 入口与恢复 | `list_capabilities`(授权目录、工作流与数据地图)`get_my_quota`(额度自查)`list_my_research_tasks`(任务历史与回执恢复)`get_research_task`(异步任务轮询) |
 
@@ -176,16 +177,29 @@ ADAMAS_API_KEY=<your-api-key> python examples/quickstart.py
 把研究问题外包给 ADAMAS 研究引擎、一键产出深度纪要 PDF。方法论详见 Skill。
 
 首次会话先查能力地图，批量调用或提交研究前用 `get_my_quota` 自查；它免日额度扣减，仍受请求频率限制。
+
+`POST /mcp` 的完整 UTF-8 JSON-RPC 请求体（协议字段及全部参数）最多 **1 MiB（1048576 bytes）**；可查看 `list_capabilities().transport.request_limits`。
+字段字符上限不等于完整请求字节上限，中文、emoji、JSON 转义和空白都计入实际传输字节。
+
+编辑消息时，`changes.versions` 最多20项，每项≤399996个Unicode字符；完整数组按
+`json.dumps(versions, ensure_ascii=False)` 默认格式序列化后≤400000个Unicode字符，
+含括号、引号、转义、逗号和空格。非ASCII字符不转义，元素之间用逗号加一个空格分隔。
+这些字段限制同时生效，仍须满足完整 UTF-8 JSON-RPC 请求体的 1 MiB 上限。
+
+完整请求体超过 1 MiB 时返回 HTTP 413，本次请求未进入工具业务；不能据此推断此前受理状态未知的提交未被受理，先核对原任务或原资源。
+不自动截断文本、丢弃 history 或 versions，也不换键重投写入或收费操作。大文本可用网页编辑，或由用户明确缩小输入范围后再操作。
+
 研究提交回执丢失时，先用 `list_my_research_tasks` 找回 task_id，再轮询。
-付费三个提交工具支持可选 `idem_key`（≤128 个 ASCII 字符，`[A-Za-z0-9][A-Za-z0-9_.:-]*`）：同一 key、同一工具内同键同完整业务参数返回原任务，不重复扣本次账号用量。深研 `session_id` 也必须一致；同键换参为 `BadParam`。无键每次 RPC 仍新建意图，但回执与本版本创建任务的轮询会返回生成的 `auto:<UUIDhex>` 恢复键；丢回执先历史找 task_id，再轮询取键，需要恢复提交时显式传返回键与完整原参数。轮询不会自动重新派发付费任务，新键不等于恢复原任务。 持久付费任务还匹配原绑定账号；改绑不转让历史，更换账号应重新签发 key。旧游标失效时从第一页重取。
+付费四个提交工具支持可选 `idem_key`（≤128 个 ASCII 字符，`[A-Za-z0-9][A-Za-z0-9_.:-]*`）：同一 key、同一工具内同键同完整业务参数返回原任务，不重复扣本次账号用量。深研 `session_id` 也必须一致；同键换参为 `BadParam`。无键每次 RPC 仍新建意图，但回执与本版本创建任务的轮询会返回生成的 `auto:<UUIDhex>` 恢复键；丢回执先历史找 task_id，再轮询取键，需要恢复提交时显式传返回键与完整原参数。轮询不会自动重新派发付费任务，新键不等于恢复原任务。 持久付费任务还匹配原绑定账号；改绑不转让历史，更换账号应重新签发 key。旧游标失效时从第一页重取。
 回执新增 `idempotency_persisted`，可能带 `progress` / `task_status`；这不证明研究引擎已受理。状态未知先查历史/轮询，不能盲目重投或推断已退款。
 历史按 `has_more` / `next_cursor` 翻页，保留原 status / kind；历史是落库摘要，当前状态与结果用轮询工具获取。
+网页会话 ID、消息 ID 与研究 task_id 分别管理；深研不会自动创建网页会话。公开分享须用户明确同意，删除会话不撤销分享快照。停止网页生成返回 `cancel_requested` / `not_running` / `not_cancellable_here`；后者不表示已停止，也不支持取消异步研究或请求退款。热点历史用日期与游标翻页，不能当作实时新闻。
 工具错误先读 `error_class` 与 `recovery`，仅 `retry_safe=true` 时自动重放，不盲目重复付费提交。
 
 图谱返回焦点及一跳邻居，sector 同时限制两者；每条边的端点都在返回节点中。
 公司名单先确认 `ambiguous`，全文先查 `meta.content_status`，截断正文不能当成全文。
 信息流的日期来源于文件修改时间，先检查 `stale`；空文件未生成不代表市场没有新闻。
-深度研究的 `doc_id_mapping` 常为空；按 `citation_note` 使用可用映射，无映射保留原 E 编号，不编造文档标题或链接，也不承诺所有回答可审计。
+深度研究的 `doc_id_mapping` 可能为空；按 `citation_note` 使用可用映射，无映射保留原 E 编号，不编造文档标题或链接，也不承诺所有回答可审计。
 
 ## 安装 Skill(可选,强烈推荐)
 
@@ -206,4 +220,4 @@ Skill 是「怎么用好这些工具」的方法论包:先看地图再取数、�
 
 ## 版本
 
-见 [CHANGELOG.md](CHANGELOG.md)。2.4.0 正式发布；实际支持范围以当前端点发现结果为准。
+见 [CHANGELOG.md](CHANGELOG.md)。2.5.0 接入材料；服务升级期间实际支持范围以当前端点发现结果为准。

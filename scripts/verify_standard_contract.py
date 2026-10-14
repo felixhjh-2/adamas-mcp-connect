@@ -27,14 +27,24 @@ STANDARD_TOOL_ORDER = (
     "submit_deep_research",
     "submit_stock_screen",
     "submit_notes_report",
+    "submit_company_roundtable",
     "get_research_task",
     "list_my_research_tasks",
+    "list_kb_conversations",
+    "get_kb_conversation",
+    "delete_kb_conversation",
+    "update_kb_message",
+    "share_kb_content",
+    "manage_kb_shares",
+    "stop_kb_generation",
+    "get_hot_notes",
 )
 STANDARD_TOOLS = set(STANDARD_TOOL_ORDER)
 STANDARD_DATA_TOOLS = STANDARD_TOOLS - {
     "submit_deep_research",
     "submit_stock_screen",
     "submit_notes_report",
+    "submit_company_roundtable",
 }
 STANDARD_PROMPTS = {"industry_brief", "deep_research_report"}
 
@@ -44,6 +54,14 @@ STANDARD_PROMPTS = {"industry_brief", "deep_research_report"}
 # fields and additional capability identifiers. The legal research mode `pro`
 # is deliberately not forbidden.
 FORBIDDEN_PUBLIC_IDENTIFIER_DIGESTS = {
+    "08c0a549884dfb16749c4fdc644245f1ed9a5d5d8d05168ecf423dffecc0e957",
+    "14b48da5dd28a9193e03d326c78f23540a370c54be063ee47dc5cf88e9033ccd",
+    "512064869cfefb9c2ff43c963b8370ccc29f5c85fb8a460166cb9d7f9a995641",
+    "6cb7d485adc230fd05d7003b36ab67711839e5599133fb865db5e0db409ce80e",
+    "7e4c390df13448f18ccbfba7e39335ead4915f4115243688d3e123cbba4d53b5",
+    "a4041b96f7cd624a07626d797a9bd18be2739c49fb72d014742da7eaa616512b",
+    "d5553786a713dc134d1db611ba7b5cdbf5c98d12e04646f22d9baacab44f34be",
+    "f34d5ec4cdb2573310d17332b67e19653356136686482decfccfac9bea5e9b8f",
     "af03096fed90ed61efaf370e89686a258eea1d733ad749e0a07c00b469180312",
     "50ead54a10ff10018d57d5397928b40ded409a88a59dc0b8402d2dd863b08cd9",
     "ba9e3f0716bd6175bf57c5badd5c432c9c6cf00b32f88de965df37c9ff124a11",
@@ -105,6 +123,21 @@ def content_leaks(line: str) -> bool:
 def require(condition: bool, message: str) -> None:
     if not condition:
         raise SystemExit(message)
+
+
+def verify_kb_versions_documentation(documents: tuple[str, ...]) -> None:
+    # These are simultaneous limits: a valid item/serialized field can still
+    # exceed the independent UTF-8 transport limit. Never publish a per-item
+    # 400000 allowance alongside a correct aggregate paragraph elsewhere.
+    incorrect_item_limit = re.compile(r"(?:每项|单项)\s*(?:最多|不超过|上限为|为|[≤<]=?)?\s*[`*]*400000")
+    for document in documents:
+        require(not incorrect_item_limit.search(document), "versions 错写每项400000字符")
+        for marker in ("changes.versions", "最多20项", "每项≤399996个Unicode字符",
+                       "完整数组", "json.dumps(versions, ensure_ascii=False)",
+                       "默认格式序列化后≤400000个Unicode字符", "含括号、引号、转义、逗号和空格",
+                       "非ASCII字符不转义", "元素之间用逗号加一个空格分隔",
+                       "仍须满足完整 UTF-8 JSON-RPC 请求体的 1 MiB 上限"):
+            require(marker in document, f"versions 序列化与完整请求限制说明缺 {marker}")
 
 
 def verify_boundary_self_checks() -> None:
@@ -244,12 +277,14 @@ def main() -> None:
         f"README 工具速览漂移: {sorted(readme_tools)}",
     )
     require(
-        len(readme_tools) == len(STANDARD_TOOL_ORDER) == 17,
+        len(readme_tools) == len(STANDARD_TOOL_ORDER) == 26,
         f"Standard 工具计数漂移: README={len(readme_tools)} contract={len(STANDARD_TOOL_ORDER)}",
     )
     for document in (readme, usage):
-        require("17 个工具" in document, "公开文档缺 Standard 17 工具口径")
-        for stale_count in ("13", "14", "15"):
+        require("26 个工具" in document, "公开文档缺 Standard 26 工具口径")
+        counts = re.findall(r"(?<!\d)(\d+)\s*个(?:对外|投研)?工具", document)
+        require(bool(counts) and set(counts) == {"26"}, f"公开文档工具数不一致: {counts}")
+        for stale_count in ("13", "14", "15", "17"):
             require(
                 stale_count + " 个工具" not in document,
                 f"公开文档仍残留旧工具数口径: {stale_count}",
@@ -394,8 +429,8 @@ def main() -> None:
             ".kimi-code/skills/adamas-research-report/" in section,
             "Kimi Code Skill 安装路径缺失",
         )
-    require(len(STANDARD_DATA_TOOLS) == 14, "data 类精确计数漂移")
-    require("14 个 data 类 + 3 个 research 提交工具" in usage, "工具分类计数漂移")
+    require(len(STANDARD_DATA_TOOLS) == 22, "data 类精确计数漂移")
+    require("22 个 data 类入口 + 4 个 research 提交工具" in usage, "工具分类计数漂移")
     for document in (usage, skill):
         for marker in (
             "get_global_macro()",
@@ -470,23 +505,42 @@ def main() -> None:
         "公开文档引用了不存在的生产脚本",
     )
     for document in (readme, usage, skill):
-        for marker in ("2.4.0", "正式发布", "get_my_quota", "list_my_research_tasks",
+        for marker in ("2.5.0", "接入材料", "get_my_quota", "list_my_research_tasks",
                        "recovery", "retry_safe", "content_status", "stale", "doc_id_mapping"):
             require(marker in document, f"正式契约缺 {marker}")
         for stale in ("候选契约", "候选版本", "尚未发布", "本候选"):
             require(stale not in document, f"当前文档仍标为未正式发布: {stale}")
+        for marker in ("POST /mcp", "UTF-8 JSON-RPC", "1 MiB（1048576 bytes）", "list_capabilities().transport.request_limits",
+                       "字段字符上限不等于完整请求字节上限", "中文、emoji、JSON 转义", "HTTP 413",
+                       "本次请求未进入工具业务", "不能据此推断此前受理状态未知的提交未被受理",
+                       "不自动截断文本、丢弃 history 或 versions", "不换键重投写入或收费操作", "网页编辑",
+                       "用户明确缩小输入范围"):
+            require(marker in document, f"公开完整请求大小或安全恢复说明缺 {marker}")
+    verify_kb_versions_documentation((readme, usage, skill))
     for marker in ("next_cursor", "has_more", "file_mtime", "source_updated_at",
                    "matched_node_ids", "context_node_ids", "ambiguous", "citation_note",
                    "download_links_status", "idempotency_persisted", "task_status",
                    "[A-Za-z0-9][A-Za-z0-9_.:-]*", "新键不等于恢复原任务"):
         require(marker in usage, f"正式使用文档缺 {marker}")
-    for tool in ("submit_deep_research", "submit_stock_screen", "submit_notes_report"):
+    for tool in ("submit_deep_research", "submit_stock_screen", "submit_notes_report", "submit_company_roundtable"):
         section = usage.split(f"#### `{tool}`", 1)[1].split("\n#### `", 1)[0]
         require("| `idem_key` | string | 否 | 空串 |" in section,
                 f"付费提交缺可选幂等参数: {tool}")
     for document in (readme, skill):
         for marker in ("idem_key", "idempotency_persisted", "session_id", "BadParam"):
             require(marker in document, f"正式付费恢复说明缺 {marker}")
+    for document in (readme, usage, skill):
+        for marker in ("submit_company_roundtable", "get_hot_notes", "list_kb_conversations",
+                       "get_kb_conversation", "delete_kb_conversation", "update_kb_message",
+                       "share_kb_content", "manage_kb_shares", "stop_kb_generation",
+                       "not_cancellable_here"):
+            require(marker in document, f"新增 Standard 能力或停止边界缺 {marker}")
+    require("四个付费提交工具" in skill, "Skill 付费提交数量漂移")
+    require("data 类不等于只读" in usage, "网页写操作未说明配额分类和副作用的区别")
+    require("不自动创建网页会话" in usage and "不支持 MCP task_id 或 AI 异步任务取消" in usage,
+            "网页会话与异步任务边界不清")
+    require("已经公开的分享快照会独立保留" in usage and "make_public:true" in usage,
+            "公开分享确认或独立快照边界缺失")
     verify_boundary_self_checks()
     verify_public_boundary()
 
@@ -507,13 +561,12 @@ def main() -> None:
             encoding="utf-8"
         )
     )
-    require(plugin["version"] == "2.4.0", "插件正式版本未升级到 2.4.0")
-    require("## 2026-10-13 · 2.4.0 正式发布" in changelog
-            and "插件正式版本升级到 2.4.0" in changelog, "CHANGELOG 缺正式版本记录")
+    require(plugin["version"] == "2.5.0", "插件材料版本未升级到 2.5.0")
+    require("## 2026-10-14 · 2.5.0 接入材料" in changelog, "CHANGELOG 缺本次材料版本记录")
     for manifest_text in (plugin["description"], marketplace["plugins"][0]["description"]):
-        require("17" in manifest_text and "2.4.0 正式发布" in manifest_text
+        require("26" in manifest_text and "2.5.0 接入材料" in manifest_text
                 and "候选" not in manifest_text and "尚未发布" not in manifest_text,
-                "插件清单缺 Standard 17 工具正式口径")
+                "插件清单缺 Standard 26 工具正式口径")
         require("全球宏观" in manifest_text, "插件清单缺全球宏观能力")
     require(marketplace["plugins"][0]["name"] == plugin["name"], "marketplace/plugin 名称漂移")
     require("adamas" in mcp["mcpServers"], "插件缺 adamas MCP 配置")
