@@ -194,7 +194,9 @@ ADAMAS_API_KEY=<your-api-key> python examples/quickstart.py
 回执新增 `idempotency_persisted`，可能带 `progress` / `task_status`；这不证明研究引擎已受理。状态未知先查历史/轮询，不能盲目重投或推断已退款。
 历史按 `has_more` / `next_cursor` 翻页，保留原 status / kind；历史是落库摘要，当前状态与结果用轮询工具获取。
 网页会话 ID、消息 ID 与研究 task_id 分别管理；深研不会自动创建网页会话。原生 `submit_kb_question` 可新建或续问本人网页知识库会话，`regenerate_kb_answer` 对最新已结束助手消息重新生成；两者返回原 `task_id` 与 `generation_id`；受理待确认时可能尚无 `conversation_id` / `message_id`，确认后才给出原生标识与停止指引。保留原任务查询，不因缺少标识换键重投。网页与 MCP 后续提问均使用本人会话最近 3 轮已完成问答的摘要，重新生成排除目标回答，不接收调用方伪造历史。
-重新生成保留原 content / agent_steps / 完整 versions 快照；没有新回答时原样回退，有部分新回答则保留为新版本，网页显示最近 5 版。显式 `get_research_task(include_original_native=true)` 只读取原快照供核对及恢复所需数据；读取不自动恢复。`update_kb_message` 只能显式编辑 content / versions，不能完整恢复 agent_steps；读取快照也不能恢复已删除会话。
+重新生成保留原 content / agent_steps / 完整 versions 快照；没有新回答时原样回退，有部分新回答则保留为新版本，网页显示最近 5 版。显式 `get_research_task(include_original_native=true)` 只读取原快照供核对及恢复所需数据；读取不自动恢复。
+原快照按体量读取：原快照JSON≤262144 bytes的小对象返回 original_native_snapshot；大对象返回 original_native_snapshot_chunk。首请求 original_native_offset=0，后续仅在 include_original_native=true 时传上一页 next_offset（UTF-8 字节偏移），直到 next_offset=null。每页原始bytes最多262144，小对象只接受offset=0，offset达到或超过total_bytes返回BadParam。逐页 base64 解码为 bytes，按 chunk_offset 拼接，核对 total_bytes 与 snapshot_sha256 后，才一次 UTF-8 解码并 JSON 解析；不能逐页先解码 UTF-8，分片可能切在 emoji 字节中间。每页重新校验原 key 与账号权限，且应核对同一 recovery_snapshot_id / 消息 / 会话 / SHA / 总字节数；页外 versions_trimmed 可随任务终态变化，不是原快照 JSON 的一部分。
+`update_kb_message` 只能显式编辑 content / versions，不能完整恢复 agent_steps；读取快照也不能恢复已删除会话。
 原生生成停止时向 `stop_kb_generation` 传本轮 `message_id` 与 `generation_id`；旧网页流可省略 generation_id。`cancel_requested` 仅表示已请求，`not_running` 表示该轮不在运行，`not_cancellable_here` 不表示已停止。继续查询原任务确认结果，停止不等于退款；部分新回答也计入本次用量。它不取消普通深研或通用 AI 异步任务。
 公开分享须用户明确同意，删除会话不撤销分享快照，也不删除独立研究回执及原回答快照；生成中先停止并确认终态。热点历史用日期与游标翻页，不能当作实时新闻。
 客户端可能缓存工具列表；若看不到新工具，刷新工具列表或断开后重新连接，再查 tools/list。材料 2.6.0 与服务 contract_version `2026-10-14.2` 分别标识文档与服务契约，实际以发现结果为准。

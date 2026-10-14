@@ -129,7 +129,9 @@ data 工具取相关行业/标的客观数据 → 轮询拿到研究结论 → �
 
 **原生知识库提问与重新生成**：用户要在网页继续的会话时使用 `submit_kb_question(question, conversation_id=0)` 新建，或传本人未删除 conversation_id 续问。服务采用本人最近 3 轮已完成问答摘要（问题至 2000、回答至 500 个 Unicode 字符），不改写原正文；调用方不传 history/session_id，网页后续也连续使用同一会话历史。`regenerate_kb_answer(message_id=...)` 仅重做最新已结束助手消息，用其原问题并排除目标回答的历史。保留原 task_id / generation_id / conversation_id / message_id，用原任务轮询，二者消耗 research 提交额度及账号用量，pro 模式按 2 倍。
 
-重新生成保留原 content / agent_steps / 完整 versions；没有新回答时原样回退，有部分新回答则保留为新版本并计入用量，网页显示最近 5 版。以 completion / partial 判断完整度。显式 `get_research_task(include_original_native=true)` 只读取原快照供核对及恢复所需数据；读取不自动恢复，也不重跑或再次结算。快照 versions 是完整原 JSON 字符串，附字节数；`update_kb_message` 只能显式编辑 content / versions，不能恢复 agent_steps。删除会话不会抹去独立回执/原快照，读取快照不会重建已删除会话；活动生成先停止并确认终态再编辑或删除。
+重新生成保留原 content / agent_steps / 完整 versions；没有新回答时原样回退，有部分新回答则保留为新版本并计入用量，网页显示最近 5 版。以 completion / partial 判断完整度。显式 `get_research_task(include_original_native=true)` 只读取原快照供核对及恢复所需数据；读取不自动恢复，也不重跑或再次结算。
+原快照按体量读取：原快照JSON≤262144 bytes的小对象返回 original_native_snapshot；大对象返回 original_native_snapshot_chunk。首请求 original_native_offset=0，后续仅在 include_original_native=true 时传上一页 next_offset（UTF-8 字节偏移），直到 next_offset=null。每页原始bytes最多262144，小对象只接受offset=0，offset达到或超过total_bytes返回BadParam。逐页 base64 解码为 bytes，按 chunk_offset 拼接，核对 total_bytes 与 snapshot_sha256 后，才一次 UTF-8 解码并 JSON 解析；不能逐页先解码 UTF-8，分片可能切在 emoji 字节中间。每页重新校验原 key 与账号权限，且应核对同一 recovery_snapshot_id / 消息 / 会话 / SHA / 总字节数；页外 versions_trimmed 可随任务终态变化，不是原快照 JSON 的一部分。
+快照 versions 保留完整原字符串及字节数；非空且合法时再解析其中的 JSON，不自动修复或丢弃旧数据。`update_kb_message` 只能显式编辑 content / versions，不能恢复 agent_steps。删除会话不会抹去独立回执/原快照，读取快照不会重建已删除会话；活动生成先停止并确认终态再编辑或删除。
 
 **停止知识库生成**：原生 MCP 任务使用 `stop_kb_generation(message_id=..., generation_id=原本轮UUID)`；旧网页流可省略 generation_id。不能拿旧轮次停止新一轮。`cancel_requested` 后查询原任务确认终态，`not_running` 表示该轮不在运行，`not_cancellable_here` 不证明已停止。停止不等于退款，部分新回答仍计入用量；它不取消普通深研或通用 AI 异步任务，不请求退款。
 

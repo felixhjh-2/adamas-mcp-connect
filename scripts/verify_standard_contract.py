@@ -549,11 +549,17 @@ def main() -> None:
         for marker in ("submit_kb_question", "regenerate_kb_answer", "generation_id",
                        "include_original_native=true", "读取不自动恢复", "agent_steps",
                        "最近 3 轮", "最近 5 版", "部分新回答", "刷新工具列表",
-                       "2026-10-14.2"):
+                       "2026-10-14.2", "original_native_offset=0", "original_native_snapshot_chunk",
+                       "next_offset", "base64", "bytes", "snapshot_sha256",
+                       "total_bytes", "不能逐页先解码 UTF-8", "≤262144 bytes",
+                       "小对象只接受offset=0", "offset达到或超过total_bytes"):
             require(marker in document, f"原生知识库安全使用说明缺 {marker}")
         for stale in ("不提供新建网页会话或重新生成回答入口", "仅网页可取消消息",
                       "四个付费提交工具"):
             require(stale not in document, f"原生知识库仍有旧能力边界: {stale}")
+    task_section = usage.split("#### `get_research_task`", 1)[1].split("\n#### `", 1)[0]
+    require("| `original_native_offset` | int | 否 | 0 |" in task_section,
+            "快照分页缺可选字节偏移参数表")
     require("snapshot_only" in usage and "recovery_snapshot_id" in usage,
             "完整快照只读与恢复标识缺失")
     require("`generation_id`" in usage.split("#### `stop_kb_generation`", 1)[1].split("\n#### `", 1)[0],

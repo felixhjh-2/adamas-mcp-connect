@@ -862,7 +862,8 @@ data 类配额(rpm/日额度),**不消耗 research 日额度**——放心轮询
 | 名称 | 类型 | 必填 | 默认 | 说明 |
 |---|---|---|---|---|
 | `task_id` | string | 是 | — | 提交时返回的任务 ID(UUID) |
-| `include_original_native` | bool | 否 | false | 仅原生重新生成任务：显式读取完整原回答快照，普通轮询省略 |
+| `include_original_native` | bool | 否 | false | 仅原生重新生成任务：显式读取原回答快照，普通轮询省略 |
+| `original_native_offset` | int | 否 | 0 | 快照 UTF-8 JSON 的字节偏移；仅 include_original_native=true 可非零。首请求0，后续原样传 next_offset；须为int64非负整数，不能传bool或小数 |
 
 **返回结构要点**(按状态):
 
@@ -876,7 +877,21 @@ data 类配额(rpm/日额度),**不消耗 research 日额度**——放心轮询
 
 原生任务保留原 task_id 与原生 conversation_id / message_id / generation_id。完成结果可能为部分交付；以返回的 completion（complete / stopped / failed / worker_lost）/ partial 和正文为准，不把部分回答当作完整成功，也不把停止请求当作终态。新回答已部分交付仍计入账号用量。仅轮询原任务，不为等待或观察失败创建新任务。
 
-`include_original_native=true` 仅适用于原重新生成任务且仍须匹配原 key、原绑定账号与有效授权。返回 snapshot_only=true 与 original_native_snapshot，其中包含原快照及 recovery_snapshot_id，content / agent_steps / versions 为完整原字符串，附各字段字节数；versions 须按 JSON 字符串解析，不能当作网页可见最近 5 版。普通轮询不自动返回大快照。snapshot_only 分支保留已存 pending / running / done / failed 状态，不刷新生成状态，也不能据此断言当前结果已完成。此读取不写回网页消息、不重新派发、不触发新的结算。
+`include_original_native=true` 仅适用于原重新生成任务且每页仍须匹配原 key、原绑定账号与有效授权。返回 snapshot_only=true；普通轮询不自动返回大快照。该分支保留已存 pending / running / done / failed 状态，不刷新生成状态，不写回网页消息、不重新派发、不触发结算，不能用快照状态断言当前生成已经完成。
+
+完整原快照 JSON ≤262144 bytes 时，offset=0 返回 original_native_snapshot 对象；大对象返回 original_native_snapshot_chunk，包含 total_bytes、snapshot_sha256、chunk_offset、next_offset、encoding:"base64-json-utf8"、data（base64），以及 conversation_id / message_id / recovery_snapshot_id / versions_trimmed。
+
+每页调用计入data配额与请求频率，不消耗research提交额度。每页原始bytes最多262144（base64最多349528字符）。小对象只接受offset=0；offset达到或超过total_bytes返回BadParam，不能用手算偏移跳过终页判断。
+
+读取大快照按以下步骤进行：
+
+1. 首请求 original_native_offset=0，显式 include_original_native=true；核对原任务和恢复标识。
+2. 每页将 data 按 base64 解码为 bytes，按 chunk_offset 累积；下一次传原样 next_offset，它是 UTF-8 **字节偏移**，不是字符数。next_offset=null 才是终页。
+3. 每页核对同一 conversation_id / message_id / recovery_snapshot_id / snapshot_sha256 / total_bytes。累计字节数必须等于 total_bytes，整体 SHA-256 必须等于 snapshot_sha256；失败就停止，不用不完整材料恢复。
+4. 校验通过后才一次 UTF-8 解码并 JSON 解析。不能逐页先解码 UTF-8，分片可能切在中文或 emoji 字节中间，也不能把每页当完整 JSON。
+
+原快照内 content / agent_steps / versions 保留完整原字符串及各字段字节数；versions 非空且合法时再解析其 JSON，不自动修复或丢弃旧数据。大快照不可变 JSON 含原正文、步骤、版本、字节数及原生/恢复标识，不含页外的 versions_trimmed；后者可随任务终态变化，不能参与拼接快照的校验。此读取只提供核对及恢复所需数据，不自动恢复；手动编辑仍受 content / versions 限额，不能经 update_kb_message 恢复 agent_steps。
+
 
 `done` 时的 `result` 结构:
 
@@ -1014,6 +1029,7 @@ get_research_task(task_id) ──► running(带 progress 阶段描述)──►
 | 产业链量化选股 | — | 约 3–8 分钟 | ≥60 秒 |
 | 深度纪要报告 | — | 约 8–15 分钟 | ≥60 秒 |
 | 多公司报告横向研究 | — | 按公司与材料规模变化，以回执指引为准 | 按 next_step，建议≥30 秒 |
+| 原生知识库提问/重新生成 | auto / flash / plus / pro | 以实际回执指引为准 | 按 next_step，间隔≥30 秒 |
 
 **实践建议**:
 
