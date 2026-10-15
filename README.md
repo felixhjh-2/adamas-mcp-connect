@@ -3,7 +3,7 @@
 > 把 ADAMAS 投研能力接进你自己的 AI:产业景气度、产业链传导图谱、公司跟踪、全球宏观、
 > 模型选股、每日信息流、原生知识库问答、深度研究与纪要生成 —— **一个 MCP 端点,Standard 档 28 个工具**。
 
-> **接入材料（2.6.0，2026-10-14）**：本文与配套 Skill 对应本版本的 Standard 契约。
+> **接入材料（2.6.1，2026-10-15）**：本文与配套 Skill 对应本版本的 Standard 契约。
 > 当前 key 实际可用工具和参数以 `tools/list`、`prompts/list` 与 `list_capabilities().service` 为准。
 
 - **端点**:`https://www.adamas-research.com/mcp`(remote MCP,streamable HTTP,无需安装任何服务)
@@ -200,13 +200,14 @@ ADAMAS_API_KEY=<your-api-key> python examples/quickstart.py
 原生生成停止时向 `stop_kb_generation` 传本轮 `message_id` 与 `generation_id`；旧网页流可省略 generation_id。`cancel_requested` 仅表示已请求，`not_running` 表示该轮不在运行，`not_cancellable_here` 不表示已停止。继续查询原任务确认结果，停止不等于退款；部分新回答也计入本次用量。它不取消普通深研或通用 AI 异步任务。
 指定原轮停止被旧服务拒绝时，保留原 generation_id 并查询原任务；不要省略 generation_id 降级为消息级停止，也不要换成后续轮次的标识。等待服务更新或联系支持，拒绝不证明该轮已停止。
 公开分享须用户明确同意，删除会话不撤销分享快照，也不删除独立研究回执及原回答快照；生成中先停止并确认终态。热点历史用日期与游标翻页，不能当作实时新闻。
-客户端可能缓存工具列表；若看不到新工具，刷新工具列表或断开后重新连接，再查 tools/list。材料 2.6.0 与服务 contract_version `2026-10-14.2` 分别标识文档与服务契约，实际以发现结果为准。
+客户端可能缓存工具列表；若看不到新工具，刷新工具列表或断开后重新连接，再查 tools/list。材料 2.6.1 与服务 contract_version `2026-10-14.2` 分别标识文档与服务契约，实际以发现结果为准。
 工具错误先读 `error_class` 与 `recovery`，仅 `retry_safe=true` 时自动重放，不盲目重复付费提交。
 
 图谱返回焦点及一跳邻居，sector 同时限制两者；每条边的端点都在返回节点中。
 公司名单先确认 `ambiguous`，全文先查 `meta.content_status`，截断正文不能当成全文。
 信息流的日期来源于文件修改时间，先检查 `stale`；空文件未生成不代表市场没有新闻。
-深度研究的 `doc_id_mapping` 可能为空；按 `citation_note` 使用可用映射，无映射保留原 E 编号，不编造文档标题或链接，也不承诺所有回答可审计。
+保留研究正文已有的 `[E1]`、`[W1]` 等引用标记。E 编号可对照 `doc_id_mapping` 中可用的安全文档标识与来源日期（若提供）；映射是检索证据标识，不是逐条结论的出处核验。W 编号仅指本轮联网补充条目，不代表已定位原始网页、已核实 URL 或可访问链接。
+按 `citation_note` 说明引用边界；映射为空或缺少对应来源信息时保留原标记并说明限制，不补造编号、文档标题或链接。`evidence_count` / `web_evidence_count` 不等于可追溯引用数量，也不证明全部回答均有出处。
 
 ## 安装 Skill(可选,强烈推荐)
 
@@ -227,4 +228,4 @@ Skill 是「怎么用好这些工具」的方法论包:先看地图再取数、�
 
 ## 版本
 
-见 [CHANGELOG.md](CHANGELOG.md)。2.6.0 接入材料；服务升级期间实际支持范围以当前端点发现结果为准。
+见 [CHANGELOG.md](CHANGELOG.md)。2.6.1 接入材料；服务升级期间实际支持范围以当前端点发现结果为准。
