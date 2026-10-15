@@ -1,6 +1,6 @@
 # ADAMAS MCP 使用文档
 
-> **接入材料（2.6.0，2026-10-14）**：当前可用工具与参数以 `tools/list`、`prompts/list` 和 `list_capabilities().service` 为准。
+> **接入材料（2.6.1，2026-10-15）**：当前可用工具与参数以 `tools/list`、`prompts/list` 和 `list_capabilities().service` 为准。
 
 > 面向外部集成方。读完本文即可把 ADAMAS 投研能力接进你自己的 agent / IDE / 办公工具。
 
@@ -895,9 +895,16 @@ data 类配额(rpm/日额度),**不消耗 research 日额度**——放心轮询
 
 `done` 时的 `result` 结构:
 
-- 深度研究:保留 `{answer(完整回答 markdown), mode, engine, evidence_count, web_evidence_count, disclaimer}`，新增 `query`(上游问题，可能经过改写)、`created_at`(有效带时区时间，无效时为空串)、`doc_id_mapping`、`meta` 与 `citation_note`。`mode` 回显提交模式；`engine` 当前为 `"agentic"`；两个 evidence 计数透传上游统计，可能为非零值、0 或 null；它们不代表已交付的可追溯引用数量，不能据此编造来源。`doc_id_mapping` 形如 `{"E1":{"doc_id":"安全文档标识","t0_date":"2026-10-01"}}`，仅接受 E 正整数编号，日期未知时为空串；`meta` 可能仅含非负整数 `latency_ms`，也可能为空。映射常为空，不保证每个回答都有可追溯文档；无映射时保留正文原 E 编号，不编造标题或链接，并说明引用信息有限。危险路径、存储 URI、签名 URL 与凭据型标识不会透出；历史已完成任务也使用同一结果契约;
+- 深度研究:保留 `{answer(完整回答 markdown), mode, engine, evidence_count, web_evidence_count, disclaimer}`，新增 `query`(上游问题，可能经过改写)、`created_at`(有效带时区时间，无效时为空串)、`doc_id_mapping`、`meta` 与 `citation_note`。`mode` 回显提交模式；`engine` 回显上游标识，不能单凭它判断引用是否完整；两个 evidence 计数透传上游统计，可能为非零值、0 或 null；它们不代表已交付的可追溯引用数量，不能据此编造来源。`doc_id_mapping` 形如 `{"E1":{"doc_id":"安全文档标识","t0_date":"2026-10-01"}}`，仅接受 E 正整数编号，日期未知时为空串；`meta` 可能仅含非负整数 `latency_ms`，也可能为空。映射可能为空，不保证每个回答都有可追溯文档；无映射时保留正文原引用标记，不编造标题或链接，并说明引用信息有限。危险路径、存储 URI、签名 URL 与凭据型标识不会透出；历史已完成任务也使用同一结果契约;
 - 产业链选股:选股引擎完整结果对象(产业链图谱、候选公司与排名信息)+ `disclaimer`;
 - 深度纪要:`{title, markdown, pdf_download_url, pdf_download_expires_at, disclaimer}`(见 `submit_notes_report`)。
+
+研究正文与来源信息应一起使用：
+
+- 保留正文已有的 `[E1]`、`[W1]` 等标记；E 编号可对照 `doc_id_mapping` 中可用的安全文档标识与来源日期（若提供）。来源日期不能自动当作所有相关事实的数据截止日。
+- `doc_id_mapping` 是检索证据标识，不是逐条结论的出处核验；不能仅凭映射或 evidence 计数宣称每个事实都已查证。
+- W 编号仅指本轮联网补充条目，不代表已定位原始网页、已核实 URL 或可访问链接。未提供对应来源信息时说明限制，不补造网页标题或链接。
+- 结合 `citation_note` 使用结果；映射为空、缺少对应项或正文未给标记时如实说明引用信息有限，不替答案补贴来源编号，也不把无法核对的标记说成已验证出处。引用时原文保留 `disclaimer`。
 
 **示例**:
 
@@ -1179,7 +1186,7 @@ Bearer 连接，删除旧连接后按 2.3 节的 OAuth 命令重新添加，再�
 `retry_after_seconds`(300 秒)只是等待建议，只有 `recovery.retry_safe=true` 才自动重放。付费提交返回的 `recovery.action="check_task_history"`、`retry_safe=false` 要求先查历史或原 task_id；保留原 idem_key 与完整参数，受理仍未知或无法唯一恢复时停止并联系支持，不换键或继续传空键重投。
 
 **Q:研究结果里 `evidence_count` 是 0?**
-这是上游返回的统计值，也可能为非零值或 null；0 或 null 不证明没有检索证据，非零值也不证明已有可追溯引用。应检查正文及 `citation_note` / `doc_id_mapping`。映射可能为空，无映射不得编造文档标题或链接；`mode` 回显提交模式。
+这是上游返回的统计值，也可能为非零值或 null；0 或 null 不证明没有检索证据，非零值也不证明已有可追溯引用。应检查正文及 `citation_note` / `doc_id_mapping`，保留已有 E/W 标记并说明无法核对的部分。映射可能为空，不得据此补造编号、文档标题或链接；W 条目也不等于已定位或已核实的原始网页。`mode` 回显提交模式。
 
 **Q:轮询 `get_research_task` 返回「引擎状态暂不可查，请稍后查询原任务」?**
 这表示当前无法确认引擎状态；返回 `running` 不证明任务已受理或正在执行。按正常间隔继续查询原 task_id，缺少 ID 时先用 `list_my_research_tasks` 恢复；无法唯一恢复时停止并联系支持。新版请求可能已经发出但受理未知，即使超过耗时预期或 1 小时，也不能自行判失败、推断退款或换键重投；保持原 UUID、原幂等键和完整参数，按原任务的状态与 `recovery` 处理，不套用旧版 TTL 规则。
@@ -1203,4 +1210,4 @@ Bearer 连接，删除旧连接后按 2.3 节的 OAuth 命令重新添加，再�
 
 其他问题、申请 API key、提额、加 Host 白名单:联系 ADAMAS 团队。
 
-客户端可能缓存 tools/list；升级后若看不到新工具，先刷新工具列表或断开后重新连接，再检查当前 key 的授权发现。接入材料 2.6.0 与服务 contract_version `2026-10-14.2` 是不同版本标识。
+客户端可能缓存 tools/list；升级后若看不到新工具，先刷新工具列表或断开后重新连接，再检查当前 key 的授权发现。接入材料 2.6.1 与服务 contract_version `2026-10-14.2` 是不同版本标识。
