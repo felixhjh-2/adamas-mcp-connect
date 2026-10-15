@@ -1,6 +1,6 @@
 # ADAMAS MCP 使用文档
 
-> **接入材料（2.6.1，2026-10-15）**：当前可用工具与参数以 `tools/list`、`prompts/list` 和 `list_capabilities().service` 为准。
+> **接入材料（2.6.2，2026-10-16）**：当前可用工具与参数以 `tools/list`、`prompts/list` 和 `list_capabilities().service` 为准。
 
 > 面向外部集成方。读完本文即可把 ADAMAS 投研能力接进你自己的 agent / IDE / 办公工具。
 
@@ -831,6 +831,8 @@ research 类与 data 类的契约区别:**结果含模型生成的分析观点**
 
 返回原 `task_id`（UUID）与同轮 `generation_id`；受理待确认时原生标识可能尚未返回，确认后提供正整数 `conversation_id` / `message_id` 与停止指引。用原 task_id 轮询，不把网页数字 ID 当作任务 UUID。服务从本人会话最近 3 轮已完成问答构造上下文；每轮问题截取至 2000 个 Unicode 字符、回答至 500 个 Unicode 字符，仅用于上下文，不改写已保存正文。调用方不传 session_id 或 history。
 
+原生知识库完成结果的可选 `query` 返回站点保存的原问题，重新生成沿用该轮问题；旧后端可能为空。不要从回答正文猜测原问题。
+
 网页和 MCP 后续提问在同一会话连续使用上述历史；空历史明确为空，不读取另一个隐式会话。生成中的会话不能并发开启下一轮，等待终态后再续问。
 
 ---
@@ -895,7 +897,7 @@ data 类配额(rpm/日额度),**不消耗 research 日额度**——放心轮询
 
 `done` 时的 `result` 结构:
 
-- 深度研究:保留 `{answer(完整回答 markdown), mode, engine, evidence_count, web_evidence_count, disclaimer}`，新增 `query`(上游问题，可能经过改写)、`created_at`(有效带时区时间，无效时为空串)、`doc_id_mapping`、`meta` 与 `citation_note`。`mode` 回显提交模式；`engine` 回显上游标识，不能单凭它判断引用是否完整；两个 evidence 计数透传上游统计，可能为非零值、0 或 null；它们不代表已交付的可追溯引用数量，不能据此编造来源。`doc_id_mapping` 形如 `{"E1":{"doc_id":"安全文档标识","t0_date":"2026-10-01"}}`，仅接受 E 正整数编号，日期未知时为空串；`meta` 可能仅含非负整数 `latency_ms`，也可能为空。映射可能为空，不保证每个回答都有可追溯文档；无映射时保留正文原引用标记，不编造标题或链接，并说明引用信息有限。危险路径、存储 URI、签名 URL 与凭据型标识不会透出；历史已完成任务也使用同一结果契约;
+- 深度研究:保留 `{answer(完整回答 markdown), mode, engine, evidence_count, web_evidence_count, disclaimer}`，新增 `query`(上游问题，可能经过改写)、`created_at`(有效带时区时间，无效时为空串)、`doc_id_mapping`、`meta` 与 `citation_note`。`mode` 回显提交模式；`engine` 回显上游标识，不能单凭它判断引用是否完整；两个 evidence 计数透传上游统计，可能为非零值、0 或 null；它们不代表已交付的可追溯引用数量，不能据此编造来源。`doc_id_mapping` 形如 `{"E1":{"doc_id":"安全文档标识","t0_date":"2026-10-01"}}`，仅接受 E 正整数编号，日期未知时为空串；`meta` 可含非负整数 `latency_ms`、`citable_count` 与 `dropped_uncitable_count`，也可能为空。映射可能为空，不保证每个回答都有可追溯文档；无映射时保留正文原引用标记，不编造标题或链接，并说明引用信息有限。危险路径、存储 URI、签名 URL 与凭据型标识不会透出；历史已完成任务也使用同一结果契约;
 - 产业链选股:选股引擎完整结果对象(产业链图谱、候选公司与排名信息)+ `disclaimer`;
 - 深度纪要:`{title, markdown, pdf_download_url, pdf_download_expires_at, disclaimer}`(见 `submit_notes_report`)。
 
@@ -941,6 +943,8 @@ data 类配额(rpm/日额度),**不消耗 research 日额度**——放心轮询
 不筛选时省略 `status` / `kind` 或传 `null`，不要传空字符串；`cursor` 的默认值仍为空字符串。
 
 **返回**:`tasks[]`(含 `task_id`、`kind`、`status`、`progress`、失败时 `error`、`error_class` 与 `created_at` / `started_at` / `finished_at`)、`count`、`has_more`、`next_cursor`(末页 null)及 `meta.note`。按创建时间与 task_id 倒序，游标绑定当前 key、绑定账号和过滤条件；换 key、账号或条件会拒绝。旧版本游标失效时省略 cursor 从第一页重新获取。历史不包含问题、研究正文或完整结果，也不主动同步上游状态；找到 task_id 后用 `get_research_task` 获取当前状态和结果。它不能恢复其他 key 的任务。
+
+研究结果的 `meta` 可选带 `citable_count`（本轮作答映射的本地证据编号数）与 `dropped_uncitable_count`（进入作答前因缺少安全来源而排除的检索项数），仅返回非负整数。旧结果可缺省；两者不保证相加等于检索总量，统计不能代替逐条事实核验。
 
 ### 3.3 网页知识库与热点历史（data 配额）
 
@@ -1210,4 +1214,4 @@ Bearer 连接，删除旧连接后按 2.3 节的 OAuth 命令重新添加，再�
 
 其他问题、申请 API key、提额、加 Host 白名单:联系 ADAMAS 团队。
 
-客户端可能缓存 tools/list；升级后若看不到新工具，先刷新工具列表或断开后重新连接，再检查当前 key 的授权发现。接入材料 2.6.1 与服务 contract_version `2026-10-14.2` 是不同版本标识。
+客户端可能缓存 tools/list；升级后若看不到新工具，先刷新工具列表或断开后重新连接，再检查当前 key 的授权发现。接入材料 2.6.2 与服务 contract_version `2026-10-14.2` 是不同版本标识。
