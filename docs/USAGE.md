@@ -1,6 +1,6 @@
 # ADAMAS MCP 使用文档
 
-> **接入材料（2.6.5，2026-10-16）**：当前可用工具与参数以 `tools/list`、`prompts/list` 和 `list_capabilities().service` 为准。
+> **接入材料（2.6.5，2026-10-17）**：当前可用工具与参数以 `tools/list`、`prompts/list` 和 `list_capabilities().service` 为准。
 
 > 面向外部集成方。读完本文即可把 ADAMAS 投研能力接进你自己的 agent / IDE / 办公工具。
 

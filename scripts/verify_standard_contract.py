@@ -509,6 +509,11 @@ def main() -> None:
         "公开文档引用了不存在的生产脚本",
     )
     for document in (readme, usage, skill):
+        release_header = next(
+            (line for line in document.splitlines() if "接入材料（" in line), ""
+        )
+        require("接入材料（2.6.5，2026-10-17）" in release_header,
+                "当前接入材料版本或发布日期不一致")
         for marker in ("2.6.5", "接入材料", "get_my_quota", "list_my_research_tasks",
                        "recovery", "retry_safe", "content_status", "stale", "doc_id_mapping"):
             require(marker in document, f"正式契约缺 {marker}")
