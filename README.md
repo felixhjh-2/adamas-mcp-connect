@@ -3,7 +3,7 @@
 > 把 ADAMAS 投研能力接进你自己的 AI:产业景气度、产业链传导图谱、公司跟踪、全球宏观、
 > 模型选股、每日信息流、原生知识库问答、深度研究与纪要生成 —— **一个 MCP 端点,Standard 档 28 个工具**。
 
-> **接入材料（2.6.2，2026-10-16）**：本文与配套 Skill 对应本版本的 Standard 契约。
+> **接入材料（2.6.3，2026-10-16）**：本文与配套 Skill 对应本版本的 Standard 契约。
 > 当前 key 实际可用工具和参数以 `tools/list`、`prompts/list` 与 `list_capabilities().service` 为准。
 
 - **端点**:`https://www.adamas-research.com/mcp`(remote MCP,streamable HTTP,无需安装任何服务)
@@ -204,7 +204,9 @@ ADAMAS_API_KEY=<your-api-key> python examples/quickstart.py
 
 研究结果的 `meta` 可选带 `citable_count`（本轮作答映射的本地证据编号数）与 `dropped_uncitable_count`（进入作答前因缺少安全来源而排除的检索项数），仅返回非负整数。旧结果可缺省；两者不保证相加等于检索总量，统计不能代替逐条事实核验。
 
-客户端可能缓存工具列表；若看不到新工具，刷新工具列表或断开后重新连接，再查 tools/list。材料 2.6.2 与服务 contract_version `2026-10-14.2` 分别标识文档与服务契约，实际以发现结果为准。
+原生知识库的部分交付结果可保留本轮已收到的可选 `doc_id_mapping` 与证据统计。只核对该结果实际提供的 E 编号；旧服务、历史任务或来源不足时映射仍可能为空。来源映射不表示回答完整、停止成功或已退款，缺少对应项时不能宣称来源已核验。
+
+客户端可能缓存工具列表；若看不到新工具，刷新工具列表或断开后重新连接，再查 tools/list。材料 2.6.3 与服务 contract_version `2026-10-14.2` 分别标识文档与服务契约，实际以发现结果为准。
 工具错误先读 `error_class` 与 `recovery`，仅 `retry_safe=true` 时自动重放，不盲目重复付费提交。
 
 图谱返回焦点及一跳邻居，sector 同时限制两者；每条边的端点都在返回节点中。
@@ -232,4 +234,4 @@ Skill 是「怎么用好这些工具」的方法论包:先看地图再取数、�
 
 ## 版本
 
-见 [CHANGELOG.md](CHANGELOG.md)。2.6.2 接入材料；服务升级期间实际支持范围以当前端点发现结果为准。
+见 [CHANGELOG.md](CHANGELOG.md)。2.6.3 接入材料；服务升级期间实际支持范围以当前端点发现结果为准。
