@@ -1,6 +1,6 @@
 # ADAMAS MCP 使用文档
 
-> **接入材料（2.6.2，2026-10-16）**：当前可用工具与参数以 `tools/list`、`prompts/list` 和 `list_capabilities().service` 为准。
+> **接入材料（2.6.3，2026-10-16）**：当前可用工具与参数以 `tools/list`、`prompts/list` 和 `list_capabilities().service` 为准。
 
 > 面向外部集成方。读完本文即可把 ADAMAS 投研能力接进你自己的 agent / IDE / 办公工具。
 
@@ -879,6 +879,8 @@ data 类配额(rpm/日额度),**不消耗 research 日额度**——放心轮询
 
 原生任务保留原 task_id 与原生 conversation_id / message_id / generation_id。完成结果可能为部分交付；以返回的 completion（complete / stopped / failed / worker_lost）/ partial 和正文为准，不把部分回答当作完整成功，也不把停止请求当作终态。新回答已部分交付仍计入账号用量。仅轮询原任务，不为等待或观察失败创建新任务。
 
+**待发布**：原生知识库的部分交付结果可保留本轮已收到的可选 `doc_id_mapping` 与证据统计。只核对该结果实际提供的 E 编号；旧服务、历史任务或来源不足时映射仍可能为空。来源映射不表示回答完整、停止成功或已退款，缺少对应项时不能宣称来源已核验。
+
 `include_original_native=true` 仅适用于原重新生成任务且每页仍须匹配原 key、原绑定账号与有效授权。返回 snapshot_only=true；普通轮询不自动返回大快照。该分支保留已存 pending / running / done / failed 状态，不刷新生成状态，不写回网页消息、不重新派发、不触发结算，不能用快照状态断言当前生成已经完成。
 
 完整原快照 JSON ≤262144 bytes 时，offset=0 返回 original_native_snapshot 对象；大对象返回 original_native_snapshot_chunk，包含 total_bytes、snapshot_sha256、chunk_offset、next_offset、encoding:"base64-json-utf8"、data（base64），以及 conversation_id / message_id / recovery_snapshot_id / versions_trimmed。
@@ -1214,4 +1216,4 @@ Bearer 连接，删除旧连接后按 2.3 节的 OAuth 命令重新添加，再�
 
 其他问题、申请 API key、提额、加 Host 白名单:联系 ADAMAS 团队。
 
-客户端可能缓存 tools/list；升级后若看不到新工具，先刷新工具列表或断开后重新连接，再检查当前 key 的授权发现。接入材料 2.6.2 与服务 contract_version `2026-10-14.2` 是不同版本标识。
+客户端可能缓存 tools/list；升级后若看不到新工具，先刷新工具列表或断开后重新连接，再检查当前 key 的授权发现。接入材料 2.6.3 与服务 contract_version `2026-10-14.2` 是不同版本标识。

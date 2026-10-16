@@ -509,7 +509,7 @@ def main() -> None:
         "公开文档引用了不存在的生产脚本",
     )
     for document in (readme, usage, skill):
-        for marker in ("2.6.2", "接入材料", "get_my_quota", "list_my_research_tasks",
+        for marker in ("2.6.3", "接入材料", "get_my_quota", "list_my_research_tasks",
                        "recovery", "retry_safe", "content_status", "stale", "doc_id_mapping"):
             require(marker in document, f"正式契约缺 {marker}")
         for stale in ("候选契约", "候选版本", "尚未发布", "本候选"):
@@ -585,10 +585,10 @@ def main() -> None:
             encoding="utf-8"
         )
     )
-    require(plugin["version"] == "2.6.2", "插件材料版本未升级到 2.6.2")
-    require("## 2026-10-16 · 2.6.2 接入材料" in changelog, "CHANGELOG 缺本次材料版本记录")
+    require(plugin["version"] == "2.6.3", "插件材料版本未升级到 2.6.3")
+    require("## 2026-10-16 · 2.6.3 接入材料" in changelog, "CHANGELOG 缺本次材料版本记录")
     for manifest_text in (plugin["description"], marketplace["plugins"][0]["description"]):
-        require("28" in manifest_text and "2.6.2 接入材料" in manifest_text
+        require("28" in manifest_text and "2.6.3 接入材料" in manifest_text
                 and "候选" not in manifest_text and "尚未发布" not in manifest_text,
                 "插件清单缺 Standard 28 工具正式口径")
         require("全球宏观" in manifest_text, "插件清单缺全球宏观能力")
