@@ -3,7 +3,7 @@
 > 把 ADAMAS 投研能力接进你自己的 AI:产业景气度、产业链传导图谱、公司跟踪、全球宏观、
 > 模型选股、每日信息流、原生知识库问答、深度研究与纪要生成 —— **一个 MCP 端点,Standard 档 28 个工具**。
 
-> **接入材料（2.6.5，2026-10-17）**：本文与配套 Skill 对应本版本的 Standard 契约。
+> **接入材料（2.6.5，2026-10-18）**：本文与配套 Skill 对应本版本的 Standard 契约。
 > 当前 key 实际可用工具和参数以 `tools/list`、`prompts/list` 与 `list_capabilities().service` 为准。
 
 - **端点**:`https://www.adamas-research.com/mcp`(remote MCP,streamable HTTP,无需安装任何服务)
