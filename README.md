@@ -3,7 +3,7 @@
 > 把 ADAMAS 投研能力接进你自己的 AI:产业景气度、产业链传导图谱、公司跟踪、全球宏观、
 > 模型选股、每日信息流、原生知识库问答、深度研究与纪要生成 —— **一个 MCP 端点,Standard 档 28 个工具**。
 
-> **接入材料（2.6.4，2026-10-16）**：本文与配套 Skill 对应本版本的 Standard 契约。
+> **接入材料（2.6.5，2026-10-19）**：本文与配套 Skill 对应本版本的 Standard 契约。
 > 当前 key 实际可用工具和参数以 `tools/list`、`prompts/list` 与 `list_capabilities().service` 为准。
 
 - **端点**:`https://www.adamas-research.com/mcp`(remote MCP,streamable HTTP,无需安装任何服务)
@@ -193,10 +193,14 @@ ADAMAS_API_KEY=<your-api-key> python examples/quickstart.py
 付费六个提交工具支持可选 `idem_key`（≤128 个 ASCII 字符，`[A-Za-z0-9][A-Za-z0-9_.:-]*`）：同一 key、同一工具内同键同完整业务参数返回原任务，不重复扣本次账号用量。深研 `session_id` 也必须一致；同键换参为 `BadParam`。无键每次 RPC 仍新建意图，但回执与本版本创建任务的轮询会返回生成的 `auto:<UUIDhex>` 恢复键；丢回执先历史找 task_id，再轮询取键，需要恢复提交时显式传返回键与完整原参数。轮询不会自动重新派发付费任务，新键不等于恢复原任务。 持久付费任务还匹配原绑定账号；改绑不转让历史，更换账号应重新签发 key。旧游标失效时从第一页重取。
 回执新增 `idempotency_persisted`，可能带 `progress` / `task_status`；这不证明研究引擎已受理。状态未知先查历史/轮询，不能盲目重投或推断已退款。
 历史按 `has_more` / `next_cursor` 翻页，保留原 status / kind；历史是落库摘要，当前状态与结果用轮询工具获取。
-网页会话 ID、消息 ID 与研究 task_id 分别管理；深研不会自动创建网页会话。原生 `submit_kb_question` 可新建或续问本人网页知识库会话，`regenerate_kb_answer` 对最新已结束助手消息重新生成；两者返回原 `task_id` 与 `generation_id`；受理待确认时可能尚无 `conversation_id` / `message_id`，确认后才给出原生标识与停止指引。保留原任务查询，不因缺少标识换键重投。网页与 MCP 后续提问均使用本人会话最近 3 轮已完成问答的摘要，重新生成排除目标回答，不接收调用方伪造历史。
+网页会话 ID、消息 ID 与研究 task_id 分别管理；深研不会自动创建网页会话。原生 `submit_kb_question` 可新建或续问本人网页知识库会话，`regenerate_kb_answer` 对最新已结束助手消息重新生成；两者返回原 `task_id` 与 `generation_id`；受理待确认时可能尚无 `conversation_id` / `message_id`，确认后才给出原生标识与停止指引。保留原任务查询，不因缺少标识换键重投。网页与 MCP 后续提问均使用本人会话最近 3 轮已结束且有正文的问答摘要（包括保留的部分回答），重新生成排除目标回答，不接收调用方伪造历史。
 重新生成保留原 content / agent_steps / 完整 versions 快照；没有新回答时原样回退，有部分新回答则保留为新版本，网页显示最近 5 版。显式 `get_research_task(include_original_native=true)` 只读取原快照供核对及恢复所需数据；读取不自动恢复。
 原快照按体量读取：原快照JSON≤262144 bytes的小对象返回 original_native_snapshot；大对象返回 original_native_snapshot_chunk。首请求 original_native_offset=0，后续仅在 include_original_native=true 时传上一页 next_offset（UTF-8 字节偏移），直到 next_offset=null。每页原始bytes最多262144，小对象只接受offset=0，offset达到或超过total_bytes返回BadParam。逐页 base64 解码为 bytes，按 chunk_offset 拼接，核对 total_bytes 与 snapshot_sha256 后，才一次 UTF-8 解码并 JSON 解析；不能逐页先解码 UTF-8，分片可能切在 emoji 字节中间。每页重新校验原 key 与账号权限，且应核对同一 recovery_snapshot_id / 消息 / 会话 / SHA / 总字节数；页外 versions_trimmed 可随任务终态变化，不是原快照 JSON 的一部分。
 `update_kb_message` 只能显式编辑 content / versions，不能完整恢复 agent_steps；读取快照也不能恢复已删除会话。
+原生知识库任务等待期间继续查询原 `task_id`，也可按本轮标识请求停止；不要因暂时没有正文另起任务。是否有新回答、完整度及结算，以原任务终态、`completion` / `partial` 和服务端结算结果为准。任务完成状态不等于内容已通过逐项事实核验；引用映射仅供定位材料，使用结论前仍应核对原文。
+
+使用 MCP 知识库提问、重新生成或深度研究的结果时，应区分原摘录、模型分析与条件计算，核对主体、期间、年份和分母。不要把近似数扩写为精确数，或把候选原因改成确定因果；条件计算须保留假设，算术相容不表示原统计口径已经核实。
+
 原生生成停止时向 `stop_kb_generation` 传本轮 `message_id` 与 `generation_id`；旧网页流可省略 generation_id。`cancel_requested` 仅表示已请求，`not_running` 表示该轮不在运行，`not_cancellable_here` 不表示已停止。继续查询原任务确认结果，停止不等于退款；部分新回答也计入本次用量。它不取消普通深研或通用 AI 异步任务。
 指定原轮停止被旧服务拒绝时，保留原 generation_id 并查询原任务；不要省略 generation_id 降级为消息级停止，也不要换成后续轮次的标识。等待服务更新或联系支持，拒绝不证明该轮已停止。
 公开分享须用户明确同意，删除会话不撤销分享快照，也不删除独立研究回执及原回答快照；生成中先停止并确认终态。热点历史用日期与游标翻页，不能当作实时新闻。
@@ -206,7 +210,7 @@ ADAMAS_API_KEY=<your-api-key> python examples/quickstart.py
 
 原生知识库的部分交付结果可保留本轮已收到的可选 `doc_id_mapping` 与证据统计。只核对该结果实际提供的 E 编号；旧服务、历史任务或来源不足时映射仍可能为空。来源映射不表示回答完整、停止成功或已退款，缺少对应项时不能宣称来源已核验。
 
-客户端可能缓存工具列表；若看不到新工具，刷新工具列表或断开后重新连接，再查 tools/list。材料 2.6.4 与服务 contract_version `2026-10-14.2` 分别标识文档与服务契约，实际以发现结果为准。
+客户端可能缓存工具列表；若看不到新工具，刷新工具列表或断开后重新连接，再查 tools/list。材料 2.6.5 与服务 contract_version `2026-10-14.2` 分别标识文档与服务契约，实际以发现结果为准。
 工具错误先读 `error_class` 与 `recovery`，仅 `retry_safe=true` 时自动重放，不盲目重复付费提交。
 
 图谱返回焦点及一跳邻居，sector 同时限制两者；每条边的端点都在返回节点中。
@@ -235,4 +239,4 @@ Skill 是「怎么用好这些工具」的方法论包:先看地图再取数、�
 
 ## 版本
 
-见 [CHANGELOG.md](CHANGELOG.md)。2.6.4 接入材料；服务升级期间实际支持范围以当前端点发现结果为准。
+见 [CHANGELOG.md](CHANGELOG.md)。2.6.5 接入材料；服务升级期间实际支持范围以当前端点发现结果为准。
