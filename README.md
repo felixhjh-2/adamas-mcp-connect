@@ -3,7 +3,7 @@
 > 把 ADAMAS 投研能力接进你自己的 AI:产业景气度、产业链传导图谱、公司跟踪、全球宏观、
 > 模型选股、每日信息流、原生知识库问答、深度研究与纪要生成 —— **一个 MCP 端点,Standard 档 28 个工具**。
 
-> **接入材料（2.6.5，2026-10-18）**：本文与配套 Skill 对应本版本的 Standard 契约。
+> **接入材料（2.6.5，2026-10-19）**：本文与配套 Skill 对应本版本的 Standard 契约。
 > 当前 key 实际可用工具和参数以 `tools/list`、`prompts/list` 与 `list_capabilities().service` 为准。
 
 - **端点**:`https://www.adamas-research.com/mcp`(remote MCP,streamable HTTP,无需安装任何服务)
@@ -197,9 +197,9 @@ ADAMAS_API_KEY=<your-api-key> python examples/quickstart.py
 重新生成保留原 content / agent_steps / 完整 versions 快照；没有新回答时原样回退，有部分新回答则保留为新版本，网页显示最近 5 版。显式 `get_research_task(include_original_native=true)` 只读取原快照供核对及恢复所需数据；读取不自动恢复。
 原快照按体量读取：原快照JSON≤262144 bytes的小对象返回 original_native_snapshot；大对象返回 original_native_snapshot_chunk。首请求 original_native_offset=0，后续仅在 include_original_native=true 时传上一页 next_offset（UTF-8 字节偏移），直到 next_offset=null。每页原始bytes最多262144，小对象只接受offset=0，offset达到或超过total_bytes返回BadParam。逐页 base64 解码为 bytes，按 chunk_offset 拼接，核对 total_bytes 与 snapshot_sha256 后，才一次 UTF-8 解码并 JSON 解析；不能逐页先解码 UTF-8，分片可能切在 emoji 字节中间。每页重新校验原 key 与账号权限，且应核对同一 recovery_snapshot_id / 消息 / 会话 / SHA / 总字节数；页外 versions_trimmed 可随任务终态变化，不是原快照 JSON 的一部分。
 `update_kb_message` 只能显式编辑 content / versions，不能完整恢复 agent_steps；读取快照也不能恢复已删除会话。
-基于检索材料的知识库回答先核对材料与结论，再交付通过核对的正文，因此首字等待可能延长。等待时继续查询原任务，也可按本轮标识请求停止；核对未通过不会作为完整回答交付。结果中的引用映射仍须结合原材料使用，不能据此宣称每项结论都已证实。
+原生知识库任务等待期间继续查询原 `task_id`，也可按本轮标识请求停止；不要因暂时没有正文另起任务。是否有新回答、完整度及结算，以原任务终态、`completion` / `partial` 和服务端结算结果为准。任务完成状态不等于内容已通过逐项事实核验；引用映射仅供定位材料，使用结论前仍应核对原文。
 
-MCP 知识库提问、重新生成与深度研究按本轮材料组织回答，保留原文的近似措辞和候选原因限定；期间、年份或分母未建立时，不借用其他指标补齐。条件计算会说明假设，算术相容不表示原统计口径已经核实。
+使用 MCP 知识库提问、重新生成或深度研究的结果时，应区分原摘录、模型分析与条件计算，核对主体、期间、年份和分母。不要把近似数扩写为精确数，或把候选原因改成确定因果；条件计算须保留假设，算术相容不表示原统计口径已经核实。
 
 原生生成停止时向 `stop_kb_generation` 传本轮 `message_id` 与 `generation_id`；旧网页流可省略 generation_id。`cancel_requested` 仅表示已请求，`not_running` 表示该轮不在运行，`not_cancellable_here` 不表示已停止。继续查询原任务确认结果，停止不等于退款；部分新回答也计入本次用量。它不取消普通深研或通用 AI 异步任务。
 指定原轮停止被旧服务拒绝时，保留原 generation_id 并查询原任务；不要省略 generation_id 降级为消息级停止，也不要换成后续轮次的标识。等待服务更新或联系支持，拒绝不证明该轮已停止。

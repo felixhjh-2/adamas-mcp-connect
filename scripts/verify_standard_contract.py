@@ -512,8 +512,12 @@ def main() -> None:
         release_header = next(
             (line for line in document.splitlines() if "接入材料（" in line), ""
         )
-        require("接入材料（2.6.5，2026-10-18）" in release_header,
+        require("接入材料（2.6.5，2026-10-19）" in release_header,
                 "当前接入材料版本或发布日期不一致")
+        require("任务完成状态不等于内容已通过逐项事实核验" in document,
+                "公开材料缺任务完成与内容核验的边界")
+        for unsupported in ("先核对材料与结论", "通过核对的正文", "核对后交付正文"):
+            require(unsupported not in document, "公开材料承诺了未发布的内容审核保证")
         for marker in ("2.6.5", "接入材料", "get_my_quota", "list_my_research_tasks",
                        "recovery", "retry_safe", "content_status", "stale", "doc_id_mapping"):
             require(marker in document, f"正式契约缺 {marker}")
@@ -591,7 +595,7 @@ def main() -> None:
         )
     )
     require(plugin["version"] == "2.6.5", "插件材料版本未升级到 2.6.5")
-    require("## 2026-10-18 · 2.6.5 接入材料" in changelog, "CHANGELOG 缺本次材料版本记录")
+    require("## 2026-10-19 · 2.6.5 接入材料" in changelog, "CHANGELOG 缺本次材料版本记录")
     for manifest_text in (plugin["description"], marketplace["plugins"][0]["description"]):
         require("28" in manifest_text and "2.6.5 接入材料" in manifest_text
                 and "候选" not in manifest_text and "尚未发布" not in manifest_text,
